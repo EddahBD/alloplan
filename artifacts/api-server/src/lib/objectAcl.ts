@@ -40,8 +40,9 @@ export async function getObjectAclPolicy(
 /**
  * Returns true if the requesting user may perform the requested operation.
  * Rules (in order):
- *   1. No ACL policy set → allow any authenticated user (objectPath is UUID-based,
- *      not guessable; caller is responsible for requiring auth at the route level).
+ *   1. No ACL policy set → deny by default (secure default; callers must
+ *      explicitly set an ACL policy via POST /storage/objects/set-acl before
+ *      an object can be accessed).
  *   2. Public policy → allow unauthenticated READ.
  *   3. Owner match → allow any permission.
  *   4. All other private access → deny.
