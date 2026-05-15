@@ -150,24 +150,35 @@ router.get("/", async (req, res) => {
       filtered = filtered.filter((r) => vendorIdsFromPrice.includes(r.profile.id));
     }
 
-    // Sort
+    // For rating/newest: sort before pagination (no enrichment needed)
     if (sortBy === "rating") {
       filtered.sort((a, b) => (parseFloat(b.profile.rating ?? "0") - parseFloat(a.profile.rating ?? "0")));
     } else if (sortBy === "newest") {
       filtered.sort((a, b) => b.profile.createdAt.getTime() - a.profile.createdAt.getTime());
     }
-    // price_asc/price_desc handled after enrichment
 
     const total = filtered.length;
-    const paged = filtered.slice(offset, offset + limitNum);
 
-    const vendors = await Promise.all(
-      paged.map((r) => buildVendorCard({ ...r.profile, ownerName: r.ownerName, ownerProfileImage: r.ownerProfileImage }))
-    );
+    let vendors: Awaited<ReturnType<typeof buildVendorCard>>[];
 
-    // Sort by price after enrichment
-    if (sortBy === "price_asc") vendors.sort((a, b) => (a.minPrice ?? Infinity) - (b.minPrice ?? Infinity));
-    if (sortBy === "price_desc") vendors.sort((a, b) => (b.minPrice ?? 0) - (a.minPrice ?? 0));
+    if (sortBy === "price_asc" || sortBy === "price_desc") {
+      // Price sort requires enrichment (minPrice query per vendor).
+      // Enrich all filtered results first, then sort globally, then paginate.
+      const allEnriched = await Promise.all(
+        filtered.map((r) => buildVendorCard({ ...r.profile, ownerName: r.ownerName, ownerProfileImage: r.ownerProfileImage }))
+      );
+      if (sortBy === "price_asc") {
+        allEnriched.sort((a, b) => (a.minPrice ?? Infinity) - (b.minPrice ?? Infinity));
+      } else {
+        allEnriched.sort((a, b) => (b.minPrice ?? 0) - (a.minPrice ?? 0));
+      }
+      vendors = allEnriched.slice(offset, offset + limitNum);
+    } else {
+      const paged = filtered.slice(offset, offset + limitNum);
+      vendors = await Promise.all(
+        paged.map((r) => buildVendorCard({ ...r.profile, ownerName: r.ownerName, ownerProfileImage: r.ownerProfileImage }))
+      );
+    }
 
     res.json({ vendors, total, page: pageNum, limit: limitNum, hasMore: offset + limitNum < total });
   } catch (err) {
