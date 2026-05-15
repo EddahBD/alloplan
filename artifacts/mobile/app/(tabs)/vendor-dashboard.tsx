@@ -16,6 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import { useRouter } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest, resolveObjectUrl } from "@/hooks/useApi";
@@ -152,6 +153,7 @@ function StatCard({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function VendorDashboardScreen() {
+  const router = useRouter();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
@@ -651,13 +653,29 @@ export default function VendorDashboardScreen() {
         <View style={styles.sectionOuter}>
           <Text style={[styles.sectionTitle, { color: colors.foreground, marginBottom: 12 }]}>Quick Actions</Text>
           {[
-            { label: "View Public Profile", icon: "eye-outline" as const, desc: "See how customers see you" },
-            { label: "Upgrade Plan", icon: "trophy-outline" as const, desc: "Get more visibility & features" },
-            { label: "Payout Settings", icon: "cash-outline" as const, desc: "Manage your payment info" },
+            {
+              label: "View Public Profile",
+              icon: "eye-outline" as const,
+              desc: "See how customers see you",
+              onPress: () => profile && router.push(`/vendor/${profile.id}` as never),
+            },
+            {
+              label: "Upgrade Plan",
+              icon: "trophy-outline" as const,
+              desc: "Get more visibility & features",
+              onPress: () => Alert.alert("Upgrade Plan", "Subscription plans coming soon! Contact support to upgrade early."),
+            },
+            {
+              label: "Payout Settings",
+              icon: "cash-outline" as const,
+              desc: "Manage your payment info",
+              onPress: () => Alert.alert("Payout Settings", "Payout configuration coming soon."),
+            },
           ].map((action) => (
             <TouchableOpacity
               key={action.label}
               testID={`action-${action.label}`}
+              onPress={action.onPress}
               style={[styles.listItem, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
             >
               <View style={[styles.itemIcon, { backgroundColor: colors.secondary, borderRadius: 10 }]}>

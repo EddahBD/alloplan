@@ -65,7 +65,7 @@ router.get("/", async (req, res) => {
       maxPrice,
       minRating,
       available,
-      sortBy = "rating",
+      sortBy = "relevance",
       page = "1",
       limit = "20",
     } = req.query as Record<string, string>;
@@ -150,9 +150,25 @@ router.get("/", async (req, res) => {
       filtered = filtered.filter((r) => vendorIdsFromPrice.includes(r.profile.id));
     }
 
-    // For rating/newest: sort before pagination (no enrichment needed)
-    if (sortBy === "rating") {
-      filtered.sort((a, b) => (parseFloat(b.profile.rating ?? "0") - parseFloat(a.profile.rating ?? "0")));
+    // Tier weight: premium=2, pro=1, basic=0
+    const tierWeight = (tier: string | null): number =>
+      tier === "premium" ? 2 : tier === "pro" ? 1 : 0;
+
+    // For rating/newest/relevance: sort before pagination (no enrichment needed)
+    if (sortBy === "relevance") {
+      // Default ranking: tier first (premium > pro > basic), then by rating within tier
+      filtered.sort((a, b) => {
+        const tierDiff = tierWeight(b.profile.subscriptionTier) - tierWeight(a.profile.subscriptionTier);
+        if (tierDiff !== 0) return tierDiff;
+        return parseFloat(b.profile.rating ?? "0") - parseFloat(a.profile.rating ?? "0");
+      });
+    } else if (sortBy === "rating") {
+      // Explicit rating sort: rating primary, tier as tiebreaker
+      filtered.sort((a, b) => {
+        const ratingDiff = parseFloat(b.profile.rating ?? "0") - parseFloat(a.profile.rating ?? "0");
+        if (ratingDiff !== 0) return ratingDiff;
+        return tierWeight(b.profile.subscriptionTier) - tierWeight(a.profile.subscriptionTier);
+      });
     } else if (sortBy === "newest") {
       filtered.sort((a, b) => b.profile.createdAt.getTime() - a.profile.createdAt.getTime());
     }
