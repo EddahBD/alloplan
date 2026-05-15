@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import {
   signToken,
   signRefreshToken,
+  signResetToken,
   verifyToken,
   requireAuth,
 } from "../middlewares/auth";
@@ -67,7 +68,9 @@ router.post("/register", async (req, res) => {
         email: email.toLowerCase().trim(),
         passwordHash,
         phone: phone?.trim(),
-        role: role === "vendor" ? "vendor" : "customer",
+        role: (["customer", "vendor", "admin"] as const).includes(role)
+          ? (role as "customer" | "vendor" | "admin")
+          : "customer",
         referralCode: myReferralCode,
         referredBy: referredById,
       })
@@ -198,18 +201,21 @@ router.post("/refresh", async (req, res) => {
       return;
     }
 
-    const payload = verifyToken(refreshToken) as {
+    const raw = verifyToken(refreshToken) as {
       userId: number;
       email: string;
       role: string;
       tokenType?: string;
     };
-    if (payload.tokenType !== "refresh") {
+    if (raw.tokenType !== "refresh") {
       res.status(401).json({ error: "Unauthorized", message: "Not a refresh token" });
       return;
     }
-    const newToken = signToken({ userId: payload.userId, email: payload.email, role: payload.role });
-    const newRefreshToken = signRefreshToken({ userId: payload.userId, email: payload.email, role: payload.role });
+    const role = (["customer", "vendor", "admin"] as const).includes(raw.role as "customer" | "vendor" | "admin")
+      ? (raw.role as "customer" | "vendor" | "admin")
+      : "customer" as const;
+    const newToken = signToken({ userId: raw.userId, email: raw.email, role });
+    const newRefreshToken = signRefreshToken({ userId: raw.userId, email: raw.email, role });
 
     res.json({ token: newToken, refreshToken: newRefreshToken });
   } catch {
@@ -219,8 +225,30 @@ router.post("/refresh", async (req, res) => {
 
 // POST /api/auth/forgot-password
 router.post("/forgot-password", async (req, res) => {
-  // In production this sends a reset email — stub for now
-  res.json({ message: "If an account exists with that email, a reset link has been sent." });
+  try {
+    const { email } = req.body;
+    if (!email) {
+      res.status(400).json({ error: "Validation", message: "Email is required" });
+      return;
+    }
+    const [user] = await db
+      .select({ id: usersTable.id, email: usersTable.email })
+      .from(usersTable)
+      .where(eq(usersTable.email, email.toLowerCase().trim()))
+      .limit(1);
+
+    // Always return success to avoid email enumeration
+    if (user) {
+      // In production: email the reset link; here we just generate the token
+      const _resetToken = signResetToken({ userId: user.id, email: user.email });
+      // TODO: send _resetToken via email service (e.g. SendGrid / Mailgun)
+      console.info(`[dev] reset token for ${user.email}: ${_resetToken}`);
+    }
+    res.json({ message: "If an account exists with that email, a reset link has been sent." });
+  } catch (err) {
+    console.error("Forgot password error:", err);
+    res.status(500).json({ error: "Server", message: "Internal server error" });
+  }
 });
 
 // POST /api/auth/reset-password
@@ -236,10 +264,15 @@ router.post("/reset-password", async (req, res) => {
       return;
     }
 
-    let payload: { userId: number };
+    let payload: { userId: number; tokenType?: string };
     try {
-      payload = verifyToken(token) as { userId: number };
+      payload = verifyToken(token) as { userId: number; tokenType?: string };
     } catch {
+      res.status(400).json({ error: "InvalidToken", message: "Invalid or expired reset token" });
+      return;
+    }
+
+    if (payload.tokenType !== "reset") {
       res.status(400).json({ error: "InvalidToken", message: "Invalid or expired reset token" });
       return;
     }

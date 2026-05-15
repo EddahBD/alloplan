@@ -22,7 +22,7 @@ function NativeCustomerLayout() {
         <Label>Marketplace</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="planner">
-        <Icon sf={{ default: "calendar", selected: "calendar.fill" }} />
+        <Icon sf={{ default: "calendar", selected: "calendar.circle.fill" }} />
         <Label>Planner</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="wallet">
@@ -178,7 +178,7 @@ function ClassicTabLayout() {
           tabBarIcon: ({ color, focused }) =>
             isIOS ? (
               <SymbolView
-                name={focused ? "calendar.fill" : "calendar"}
+                name={focused ? "calendar.circle.fill" : "calendar"}
                 tintColor={color}
                 size={24}
               />

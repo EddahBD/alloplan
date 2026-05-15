@@ -19,7 +19,8 @@ import { Input } from "@/components/ui/Input";
 export default function RegisterScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { register, selectedRole } = useAuth();
+  const { register, selectedRole: rawRole } = useAuth();
+  const selectedRole = rawRole === "admin" ? "admin" : rawRole;
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");

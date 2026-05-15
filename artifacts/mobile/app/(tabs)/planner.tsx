@@ -175,7 +175,7 @@ export default function PlannerScreen() {
                 {item.label}
               </Text>
               <View style={styles.budgetBarTrack}>
-                <View style={[styles.budgetBar, { backgroundColor: item.color, width: item.pct }]} />
+                <View style={[styles.budgetBar, { backgroundColor: item.color, width: item.pct as `${number}%` }]} />
               </View>
               <Text style={[styles.budgetPct, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>
                 {item.pct}

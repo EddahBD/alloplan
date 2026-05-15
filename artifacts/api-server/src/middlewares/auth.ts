@@ -32,6 +32,12 @@ export function signRefreshToken(payload: AuthPayload): string {
   });
 }
 
+export function signResetToken(payload: Pick<AuthPayload, "userId" | "email">): string {
+  return jwt.sign({ ...payload, tokenType: "reset" }, JWT_SECRET!, {
+    expiresIn: "1h",
+  });
+}
+
 export function verifyToken(token: string): AuthPayload {
   const decoded = jwt.verify(token, JWT_SECRET!) as AuthPayload & {
     tokenType?: string;
