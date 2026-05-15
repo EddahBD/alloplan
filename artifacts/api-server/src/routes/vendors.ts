@@ -597,10 +597,26 @@ async function buildFullProfile(
 // ─── Helper: enrichService ─────────────────────────────────────────────────────
 
 async function enrichService(service: typeof servicesTable.$inferSelect) {
-  const [pkgCount] = await db
-    .select({ cnt: count() })
+  const pkgRows = await db
+    .select()
     .from(servicePackagesTable)
-    .where(and(eq(servicePackagesTable.serviceId, service.id), eq(servicePackagesTable.isActive, true)));
+    .where(and(eq(servicePackagesTable.serviceId, service.id), eq(servicePackagesTable.isActive, true)))
+    .orderBy(asc(servicePackagesTable.createdAt));
+
+  const packages = pkgRows.map((pkg) => {
+    let inclusions: string[] = [];
+    try { inclusions = JSON.parse(pkg.inclusions ?? "[]"); } catch {}
+    return {
+      id: pkg.id,
+      serviceId: pkg.serviceId,
+      name: pkg.name,
+      description: pkg.description,
+      price: parseFloat(pkg.price),
+      inclusions,
+      durationHours: pkg.durationHours,
+      isActive: pkg.isActive ?? true,
+    };
+  });
 
   return {
     id: service.id,
@@ -611,7 +627,8 @@ async function enrichService(service: typeof servicesTable.$inferSelect) {
     basePrice: parseFloat(service.basePrice),
     isActive: service.isActive ?? true,
     images: parseJsonArray(service.images),
-    packagesCount: pkgCount?.cnt ?? 0,
+    packagesCount: packages.length,
+    packages,
     createdAt: service.createdAt.toISOString(),
   };
 }

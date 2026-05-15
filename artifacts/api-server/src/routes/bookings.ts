@@ -10,7 +10,7 @@ import {
   servicePackagesTable,
   usersTable,
 } from "@workspace/db/schema";
-import { eq, and, or, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { requireAccessToken } from "../middlewares/auth";
 
 const router = Router();
@@ -377,27 +377,48 @@ router.post("/", requireAccessToken, async (req, res) => {
       return;
     }
 
-    // Determine total amount
+    // Determine total amount — and validate package/service ownership
     let totalAmount = manualAmount ?? 0;
+    let resolvedServiceId = serviceId ?? null;
+
     if (packageId) {
+      // Validate package exists, is active, AND belongs to the specified vendor
       const [pkg] = await db
-        .select({ price: servicePackagesTable.price, isActive: servicePackagesTable.isActive })
+        .select({
+          price: servicePackagesTable.price,
+          isActive: servicePackagesTable.isActive,
+          serviceId: servicePackagesTable.serviceId,
+          svcVendorId: servicesTable.vendorId,
+        })
         .from(servicePackagesTable)
-        .where(eq(servicePackagesTable.id, packageId))
+        .innerJoin(servicesTable, eq(servicesTable.id, servicePackagesTable.serviceId))
+        .where(and(
+          eq(servicePackagesTable.id, packageId),
+          eq(servicesTable.vendorId, vendorId),
+          eq(servicePackagesTable.isActive, true),
+          eq(servicesTable.isActive, true),
+        ))
         .limit(1);
-      if (!pkg || !pkg.isActive) {
-        res.status(404).json({ error: "Package not found or inactive" });
+
+      if (!pkg) {
+        res.status(404).json({ error: "Package not found, inactive, or does not belong to this vendor" });
         return;
       }
       totalAmount = parseFloat(pkg.price);
+      resolvedServiceId = pkg.serviceId;
     } else if (serviceId && totalAmount === 0) {
+      // Validate service belongs to vendor
       const [svc] = await db
         .select({ basePrice: servicesTable.basePrice })
         .from(servicesTable)
-        .where(and(eq(servicesTable.id, serviceId), eq(servicesTable.isActive, true)))
+        .where(and(
+          eq(servicesTable.id, serviceId),
+          eq(servicesTable.vendorId, vendorId),
+          eq(servicesTable.isActive, true),
+        ))
         .limit(1);
       if (!svc) {
-        res.status(404).json({ error: "Service not found or inactive" });
+        res.status(404).json({ error: "Service not found, inactive, or does not belong to this vendor" });
         return;
       }
       totalAmount = parseFloat(svc.basePrice);
@@ -411,17 +432,17 @@ router.post("/", requireAccessToken, async (req, res) => {
     const platformFee = totalAmount * PLATFORM_FEE_RATE;
     const vendorAmount = totalAmount - platformFee;
 
-    // Get or create customer wallet and check balance
+    // Fast pre-check: get/create wallet and do an optimistic balance check for quick UX feedback.
+    // The authoritative check happens inside the transaction with a row lock.
     const customerWallet = await getOrCreateWallet(customerId);
-    const currentBalance = parseFloat(customerWallet.balance ?? "0");
-
-    if (currentBalance < totalAmount) {
+    const preCheckBalance = parseFloat(customerWallet.balance ?? "0");
+    if (preCheckBalance < totalAmount) {
       res.status(402).json({
         error: "InsufficientFunds",
         message: "Insufficient wallet balance",
-        balance: currentBalance,
+        balance: preCheckBalance,
         required: totalAmount,
-        shortfall: totalAmount - currentBalance,
+        shortfall: totalAmount - preCheckBalance,
       });
       return;
     }
@@ -438,46 +459,82 @@ router.post("/", requireAccessToken, async (req, res) => {
       bookingRef = generateBookingRef();
     }
 
-    // Execute booking + wallet debit atomically
-    const [newBooking] = await db.transaction(async (tx) => {
-      // Debit customer wallet
-      const newBalance = currentBalance - totalAmount;
-      await tx
-        .update(walletAccountsTable)
-        .set({ balance: newBalance.toFixed(2), updatedAt: new Date() })
-        .where(eq(walletAccountsTable.id, customerWallet.id));
+    // Execute booking + wallet debit atomically.
+    // Re-read the wallet WITH a row-level lock inside the transaction to prevent
+    // double-spend under concurrent requests.
+    let newBooking: typeof bookingsTable.$inferSelect;
+    try {
+      [newBooking] = await db.transaction(async (tx) => {
+        // Lock the wallet row — prevents concurrent bookings from reading a stale balance
+        const lockedRows = await tx.execute(
+          sql`SELECT id, balance FROM wallet_accounts WHERE id = ${customerWallet.id} FOR UPDATE`
+        );
+        const lockedWallet = (lockedRows as unknown as { rows: { id: number; balance: string }[] }).rows?.[0]
+          ?? { id: customerWallet.id, balance: customerWallet.balance };
 
-      await tx.insert(walletTransactionsTable).values({
-        walletId: customerWallet.id,
-        type: "debit",
-        amount: totalAmount.toFixed(2),
-        reference: bookingRef,
-        description: `Booking payment – held in escrow (${bookingRef})`,
-        balanceBefore: currentBalance.toFixed(2),
-        balanceAfter: newBalance.toFixed(2),
+        const currentBalance = parseFloat(lockedWallet.balance ?? "0");
+        if (currentBalance < totalAmount) {
+          throw Object.assign(new Error("InsufficientFunds"), {
+            code: "INSUFFICIENT_FUNDS",
+            balance: currentBalance,
+            required: totalAmount,
+            shortfall: totalAmount - currentBalance,
+          });
+        }
+
+        const newBalance = currentBalance - totalAmount;
+
+        // Debit customer wallet
+        await tx
+          .update(walletAccountsTable)
+          .set({ balance: newBalance.toFixed(2), updatedAt: new Date() })
+          .where(eq(walletAccountsTable.id, customerWallet.id));
+
+        await tx.insert(walletTransactionsTable).values({
+          walletId: customerWallet.id,
+          type: "debit",
+          amount: totalAmount.toFixed(2),
+          reference: bookingRef,
+          description: `Booking payment – held in escrow (${bookingRef})`,
+          balanceBefore: currentBalance.toFixed(2),
+          balanceAfter: newBalance.toFixed(2),
+        });
+
+        // Create booking
+        return await tx
+          .insert(bookingsTable)
+          .values({
+            bookingRef,
+            eventId: eventId ?? null,
+            customerId,
+            vendorId,
+            serviceId: resolvedServiceId,
+            packageId: packageId ?? null,
+            status: "pending",
+            totalAmount: totalAmount.toFixed(2),
+            platformFee: platformFee.toFixed(2),
+            vendorAmount: vendorAmount.toFixed(2),
+            escrowStatus: "held",
+            eventDate: eventDate ? new Date(eventDate) : null,
+            eventLocation: eventLocation ?? null,
+            notes: notes ?? null,
+          })
+          .returning();
       });
-
-      // Create booking
-      return await tx
-        .insert(bookingsTable)
-        .values({
-          bookingRef,
-          eventId: eventId ?? null,
-          customerId,
-          vendorId,
-          serviceId: serviceId ?? null,
-          packageId: packageId ?? null,
-          status: "pending",
-          totalAmount: totalAmount.toFixed(2),
-          platformFee: platformFee.toFixed(2),
-          vendorAmount: vendorAmount.toFixed(2),
-          escrowStatus: "held",
-          eventDate: eventDate ? new Date(eventDate) : null,
-          eventLocation: eventLocation ?? null,
-          notes: notes ?? null,
-        })
-        .returning();
-    });
+    } catch (txErr: unknown) {
+      if (txErr instanceof Error && txErr.message === "InsufficientFunds") {
+        const e = txErr as Error & { balance: number; required: number; shortfall: number };
+        res.status(402).json({
+          error: "InsufficientFunds",
+          message: "Insufficient wallet balance",
+          balance: e.balance ?? 0,
+          required: e.required ?? totalAmount,
+          shortfall: e.shortfall ?? 0,
+        });
+        return;
+      }
+      throw txErr;
+    }
 
     // Notify vendor
     await createNotification(
@@ -485,10 +542,10 @@ router.post("/", requireAccessToken, async (req, res) => {
       "New Booking Request",
       `You have a new booking request (${bookingRef}). Review and accept or decline.`,
       "booking",
-      { bookingId: newBooking.id, bookingRef }
+      { bookingId: newBooking!.id, bookingRef }
     );
 
-    res.status(201).json(formatBooking(newBooking));
+    res.status(201).json(formatBooking(newBooking!));
   } catch (err) {
     console.error("Create booking error:", err);
     res.status(500).json({ error: "Internal server error" });
