@@ -8,6 +8,7 @@ import portfolioRouter from "./portfolio";
 import storageRouter from "./storage";
 import bookingsRouter from "./bookings";
 import eventsRouter from "./events";
+import paymentsRouter from "./payments";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use("/portfolio", portfolioRouter);
 router.use(storageRouter);
 router.use("/bookings", bookingsRouter);
 router.use("/events", eventsRouter);
+router.use("/payments", paymentsRouter);
 
 export default router;

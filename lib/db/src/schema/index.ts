@@ -83,6 +83,8 @@ export const vendorProfilesTable = pgTable("vendor_profiles", {
   coverImage: text("cover_image"),
   responseTime: text("response_time"),
   isAvailable: boolean("is_available").default(true),
+  cancellationPolicy: text("cancellation_policy").default("full_refund"),
+  cancellationHoursThreshold: integer("cancellation_hours_threshold").default(48),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -180,6 +182,8 @@ export const bookingsTable = pgTable("bookings", {
   eventLocation: text("event_location"),
   notes: text("notes"),
   cancellationReason: text("cancellation_reason"),
+  counterProposedDate: timestamp("counter_proposed_date"),
+  counterProposedNote: text("counter_proposed_note"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

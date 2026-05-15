@@ -7,8 +7,11 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Modal,
+  TextInput,
   Platform,
   RefreshControl,
+  KeyboardAvoidingView,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -35,6 +38,8 @@ interface Booking {
   eventLocation?: string | null;
   notes?: string | null;
   cancellationReason?: string | null;
+  counterProposedDate?: string | null;
+  counterProposedNote?: string | null;
   createdAt: string;
   updatedAt: string;
   customerName?: string;
@@ -99,6 +104,12 @@ export default function BookingDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [vendorProfileId, setVendorProfileId] = useState<number | null>(null);
+
+  // Counter-proposal modal state (vendor side)
+  const [proposeModalVisible, setProposeModalVisible] = useState(false);
+  const [proposedDateInput, setProposedDateInput] = useState("");
+  const [proposedNoteInput, setProposedNoteInput] = useState("");
+  const [proposeLoading, setProposeLoading] = useState(false);
 
   const loadBooking = useCallback(async () => {
     try {
@@ -182,9 +193,92 @@ export default function BookingDetailScreen() {
       "Are you satisfied with the service? This will release the payment to the vendor.",
       [
         { text: "Not yet", style: "cancel" },
+        { text: "Yes, Release Payment", onPress: () => patchStatus("completed") },
+      ]
+    );
+  };
+
+  const submitProposal = async () => {
+    if (!proposedDateInput.trim()) {
+      Alert.alert("Date required", "Please enter a date for your proposal.");
+      return;
+    }
+    const parsed = new Date(proposedDateInput.trim());
+    if (isNaN(parsed.getTime())) {
+      Alert.alert("Invalid date", "Please use format: YYYY-MM-DD");
+      return;
+    }
+    setProposeLoading(true);
+    try {
+      await apiRequest(`/bookings/${booking!.id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "counter_proposed",
+          proposedDate: parsed.toISOString(),
+          proposalNote: proposedNoteInput.trim() || undefined,
+        }),
+      });
+      setProposeModalVisible(false);
+      setProposedDateInput("");
+      setProposedNoteInput("");
+      await loadBooking();
+    } catch (e: unknown) {
+      Alert.alert("Failed", e instanceof Error ? e.message : "Try again");
+    } finally {
+      setProposeLoading(false);
+    }
+  };
+
+  const acceptProposal = () => {
+    Alert.alert(
+      "Accept New Date",
+      `Accept the vendor's proposed date?\n${booking?.counterProposedDate ? new Date(booking.counterProposedDate).toLocaleDateString("en-TZ", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : ""}`,
+      [
+        { text: "Not yet", style: "cancel" },
         {
-          text: "Yes, Release Payment",
-          onPress: () => patchStatus("completed"),
+          text: "Accept",
+          onPress: async () => {
+            setActionLoading(true);
+            try {
+              await apiRequest(`/bookings/${booking!.id}/status`, {
+                method: "PATCH",
+                body: JSON.stringify({ status: "accept_proposal" }),
+              });
+              await loadBooking();
+            } catch (e: unknown) {
+              Alert.alert("Failed", e instanceof Error ? e.message : "Try again");
+            } finally {
+              setActionLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const declineProposal = () => {
+    Alert.alert(
+      "Decline Proposed Date",
+      "Decline the vendor's alternative date? The original event date will remain unchanged.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Decline",
+          style: "destructive",
+          onPress: async () => {
+            setActionLoading(true);
+            try {
+              await apiRequest(`/bookings/${booking!.id}/status`, {
+                method: "PATCH",
+                body: JSON.stringify({ status: "decline_proposal" }),
+              });
+              await loadBooking();
+            } catch (e: unknown) {
+              Alert.alert("Failed", e instanceof Error ? e.message : "Try again");
+            } finally {
+              setActionLoading(false);
+            }
+          },
         },
       ]
     );

@@ -85,6 +85,8 @@ function formatBooking(booking: typeof bookingsTable.$inferSelect & {
     eventLocation: booking.eventLocation,
     notes: booking.notes,
     cancellationReason: booking.cancellationReason,
+    counterProposedDate: booking.counterProposedDate?.toISOString() ?? null,
+    counterProposedNote: booking.counterProposedNote ?? null,
     createdAt: booking.createdAt.toISOString(),
     updatedAt: booking.updatedAt.toISOString(),
     customerName: booking.customerName,
@@ -92,6 +94,43 @@ function formatBooking(booking: typeof bookingsTable.$inferSelect & {
     serviceName: booking.serviceName,
     packageName: booking.packageName,
   };
+}
+
+// ─── Internal helper: atomic wallet credit with FOR UPDATE row lock ────────────
+
+async function atomicCreditWallet(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0] | typeof db,
+  walletId: number,
+  amount: number,
+  reference: string,
+  description: string
+): Promise<{ before: number; after: number }> {
+  const lockedRows = await (tx as typeof db).execute(
+    sql`SELECT id, balance, total_earned FROM wallet_accounts WHERE id = ${walletId} FOR UPDATE`
+  );
+  const row = (lockedRows as unknown as { rows: { id: number; balance: string; total_earned: string }[] }).rows?.[0];
+  if (!row) throw new Error("Wallet not found for credit");
+
+  const before = parseFloat(row.balance ?? "0");
+  const after = before + amount;
+  const newEarned = parseFloat(row.total_earned ?? "0") + amount;
+
+  await (tx as typeof db)
+    .update(walletAccountsTable)
+    .set({ balance: after.toFixed(2), totalEarned: newEarned.toFixed(2), updatedAt: new Date() })
+    .where(eq(walletAccountsTable.id, walletId));
+
+  await (tx as typeof db).insert(walletTransactionsTable).values({
+    walletId,
+    type: "credit",
+    amount: amount.toFixed(2),
+    reference,
+    description,
+    balanceBefore: before.toFixed(2),
+    balanceAfter: after.toFixed(2),
+  });
+
+  return { before, after };
 }
 
 // ─── GET /bookings/fee-estimate ───────────────────────────────────────────────
@@ -610,27 +649,19 @@ router.patch("/:id/status", requireAccessToken, async (req, res) => {
         return;
       }
 
-      // Reject: pending → cancelled + refund
+      // Reject: pending → cancelled + full refund (atomic with FOR UPDATE lock)
       if (status === "cancelled" && currentStatus === "pending") {
         const customerWallet = await getOrCreateWallet(booking.customerId);
-        const custBalance = parseFloat(customerWallet.balance ?? "0");
 
         await db.transaction(async (tx) => {
-          const newBalance = custBalance + totalAmount;
-          await tx
-            .update(walletAccountsTable)
-            .set({ balance: newBalance.toFixed(2), updatedAt: new Date() })
-            .where(eq(walletAccountsTable.id, customerWallet.id));
-
-          await tx.insert(walletTransactionsTable).values({
-            walletId: customerWallet.id,
-            type: "credit",
-            amount: totalAmount.toFixed(2),
-            reference: booking.bookingRef,
-            description: `Booking refund – vendor declined (${booking.bookingRef})`,
-            balanceBefore: custBalance.toFixed(2),
-            balanceAfter: newBalance.toFixed(2),
-          });
+          // Lock + credit customer wallet atomically
+          await atomicCreditWallet(
+            tx,
+            customerWallet.id,
+            totalAmount,
+            booking.bookingRef,
+            `Booking refund – vendor declined (${booking.bookingRef})`
+          );
 
           await tx
             .update(bookingsTable)
@@ -646,12 +677,48 @@ router.patch("/:id/status", requireAccessToken, async (req, res) => {
         await createNotification(
           booking.customerId,
           "Booking Declined",
-          `Your booking ${booking.bookingRef} was declined. A full refund has been issued to your wallet.`,
+          `Your booking ${booking.bookingRef} was declined. A full refund of TZS ${totalAmount.toLocaleString()} has been issued to your wallet.`,
           "booking",
           { bookingId: booking.id }
         );
 
         res.json({ status: "cancelled", escrowStatus: "refunded" });
+        return;
+      }
+
+      // Propose alternative date: pending/confirmed → counter_proposed
+      if (status === "counter_proposed") {
+        const { proposedDate, proposalNote } = req.body as {
+          proposedDate?: string;
+          proposalNote?: string;
+        };
+        if (!proposedDate) {
+          res.status(400).json({ error: "proposedDate is required for counter_proposed" });
+          return;
+        }
+        if (!["pending", "confirmed"].includes(currentStatus ?? "")) {
+          res.status(400).json({ error: "Can only propose alternative dates for pending or confirmed bookings" });
+          return;
+        }
+
+        await db
+          .update(bookingsTable)
+          .set({
+            counterProposedDate: new Date(proposedDate),
+            counterProposedNote: proposalNote ?? null,
+            updatedAt: new Date(),
+          })
+          .where(eq(bookingsTable.id, bookingId));
+
+        await createNotification(
+          booking.customerId,
+          "Vendor Proposed an Alternative Date",
+          `The vendor for booking ${booking.bookingRef} has suggested a new date. Please review and accept or decline.`,
+          "booking",
+          { bookingId: booking.id, proposedDate }
+        );
+
+        res.json({ status: currentStatus, counterProposedDate: proposedDate, counterProposedNote: proposalNote ?? null });
         return;
       }
 
@@ -696,49 +763,113 @@ router.patch("/:id/status", requireAccessToken, async (req, res) => {
 
     // ── Customer transitions ──────────────────────────────────────────────────
     if (isCustomer) {
-      // Confirm completion → release escrow to vendor
-      if (status === "completed" && currentStatus === "completed" && booking.escrowStatus === "held") {
-        const vendorUserId = await (async () => {
-          const [vp] = await db
-            .select({ userId: vendorProfilesTable.userId })
-            .from(vendorProfilesTable)
-            .where(eq(vendorProfilesTable.id, booking.vendorId))
-            .limit(1);
-          return vp?.userId;
-        })();
+      // Accept vendor's counter-proposed date
+      if (status === "accept_proposal") {
+        if (!booking.counterProposedDate) {
+          res.status(400).json({ error: "No counter-proposal to accept" });
+          return;
+        }
 
-        if (!vendorUserId) {
+        await db
+          .update(bookingsTable)
+          .set({
+            eventDate: booking.counterProposedDate,
+            counterProposedDate: null,
+            counterProposedNote: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(bookingsTable.id, bookingId));
+
+        const [vendorUser] = await db
+          .select({ userId: vendorProfilesTable.userId })
+          .from(vendorProfilesTable)
+          .where(eq(vendorProfilesTable.id, booking.vendorId))
+          .limit(1);
+
+        if (vendorUser) {
+          await createNotification(
+            vendorUser.userId,
+            "Counter-Proposal Accepted",
+            `The customer has accepted your proposed date for booking ${booking.bookingRef}.`,
+            "booking",
+            { bookingId: booking.id }
+          );
+        }
+
+        res.json({ status: currentStatus, eventDate: booking.counterProposedDate.toISOString() });
+        return;
+      }
+
+      // Decline vendor's counter-proposed date (clears proposal, booking stays active)
+      if (status === "decline_proposal") {
+        if (!booking.counterProposedDate) {
+          res.status(400).json({ error: "No counter-proposal to decline" });
+          return;
+        }
+
+        await db
+          .update(bookingsTable)
+          .set({
+            counterProposedDate: null,
+            counterProposedNote: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(bookingsTable.id, bookingId));
+
+        const [vendorUser] = await db
+          .select({ userId: vendorProfilesTable.userId })
+          .from(vendorProfilesTable)
+          .where(eq(vendorProfilesTable.id, booking.vendorId))
+          .limit(1);
+
+        if (vendorUser) {
+          await createNotification(
+            vendorUser.userId,
+            "Counter-Proposal Declined",
+            `The customer has declined your proposed alternative date for booking ${booking.bookingRef}. Original date stands.`,
+            "booking",
+            { bookingId: booking.id }
+          );
+        }
+
+        res.json({ status: currentStatus, counterProposedDate: null });
+        return;
+      }
+
+      // Confirm completion → release escrow to vendor (atomic with FOR UPDATE lock)
+      if (status === "completed" && currentStatus === "completed" && booking.escrowStatus === "held") {
+        const [vendorUser] = await db
+          .select({ userId: vendorProfilesTable.userId })
+          .from(vendorProfilesTable)
+          .where(eq(vendorProfilesTable.id, booking.vendorId))
+          .limit(1);
+
+        if (!vendorUser) {
           res.status(404).json({ error: "Vendor not found" });
           return;
         }
 
         const vendorAmount = parseFloat(booking.vendorAmount ?? "0");
-        const vendorWallet = await getOrCreateWallet(vendorUserId);
-        const vendorBalance = parseFloat(vendorWallet.balance ?? "0");
+        const vendorWallet = await getOrCreateWallet(vendorUser.userId);
 
         await db.transaction(async (tx) => {
-          const newVendorBalance = vendorBalance + vendorAmount;
-          const newTotalEarned =
-            parseFloat(vendorWallet.totalEarned ?? "0") + vendorAmount;
+          // Idempotency: re-check escrow status inside the transaction
+          const [freshBooking] = await tx
+            .select({ escrowStatus: bookingsTable.escrowStatus })
+            .from(bookingsTable)
+            .where(eq(bookingsTable.id, bookingId));
+          if (freshBooking?.escrowStatus === "released") {
+            return; // already released — no-op
+          }
 
-          await tx
-            .update(walletAccountsTable)
-            .set({
-              balance: newVendorBalance.toFixed(2),
-              totalEarned: newTotalEarned.toFixed(2),
-              updatedAt: new Date(),
-            })
-            .where(eq(walletAccountsTable.id, vendorWallet.id));
-
-          await tx.insert(walletTransactionsTable).values({
-            walletId: vendorWallet.id,
-            type: "credit",
-            amount: vendorAmount.toFixed(2),
-            reference: booking.bookingRef,
-            description: `Service payment released – escrow (${booking.bookingRef})`,
-            balanceBefore: vendorBalance.toFixed(2),
-            balanceAfter: newVendorBalance.toFixed(2),
-          });
+          // Lock + credit vendor wallet atomically
+          await atomicCreditWallet(
+            tx,
+            vendorWallet.id,
+            vendorAmount,
+            booking.bookingRef,
+            `Service payment released – escrow (${booking.bookingRef})`
+          );
 
           await tx
             .update(bookingsTable)
@@ -810,29 +941,53 @@ router.post("/:id/cancel", requireAccessToken, async (req, res) => {
     }
 
     const totalAmount = parseFloat(booking.totalAmount);
-    // Full refund for pending; full refund for confirmed (vendor hasn't started)
-    const refundAmount = totalAmount;
+
+    // ── Determine refund amount using vendor's cancellation policy ────────────
+    const [vendorProfile] = await db
+      .select({
+        userId: vendorProfilesTable.userId,
+        cancellationPolicy: vendorProfilesTable.cancellationPolicy,
+        cancellationHoursThreshold: vendorProfilesTable.cancellationHoursThreshold,
+      })
+      .from(vendorProfilesTable)
+      .where(eq(vendorProfilesTable.id, booking.vendorId))
+      .limit(1);
+
+    let refundAmount = totalAmount; // default: full refund
+
+    if (isCustomer && vendorProfile && booking.eventDate) {
+      const hoursUntilEvent =
+        (booking.eventDate.getTime() - Date.now()) / (1000 * 60 * 60);
+      const threshold = vendorProfile.cancellationHoursThreshold ?? 48;
+      const policy = vendorProfile.cancellationPolicy ?? "full_refund";
+
+      // Policy only kicks in when cancellation is within the threshold window
+      if (hoursUntilEvent < threshold) {
+        if (policy === "partial_refund_50") {
+          refundAmount = totalAmount * 0.5;
+        } else if (policy === "no_refund") {
+          refundAmount = 0;
+        }
+        // "full_refund" → keep refundAmount = totalAmount
+      }
+    }
+    // Vendors cancelling always give customers a full refund
 
     const customerWallet = await getOrCreateWallet(booking.customerId);
-    const custBalance = parseFloat(customerWallet.balance ?? "0");
 
     await db.transaction(async (tx) => {
-      const newBalance = custBalance + refundAmount;
-      await tx
-        .update(walletAccountsTable)
-        .set({ balance: newBalance.toFixed(2), updatedAt: new Date() })
-        .where(eq(walletAccountsTable.id, customerWallet.id));
+      if (refundAmount > 0) {
+        // Lock + credit customer wallet atomically with FOR UPDATE
+        await atomicCreditWallet(
+          tx,
+          customerWallet.id,
+          refundAmount,
+          booking.bookingRef,
+          `Booking cancellation refund – ${refundAmount < totalAmount ? "partial" : "full"} (${booking.bookingRef})`
+        );
+      }
 
-      await tx.insert(walletTransactionsTable).values({
-        walletId: customerWallet.id,
-        type: "credit",
-        amount: refundAmount.toFixed(2),
-        reference: booking.bookingRef,
-        description: `Booking cancellation refund (${booking.bookingRef})`,
-        balanceBefore: custBalance.toFixed(2),
-        balanceAfter: newBalance.toFixed(2),
-      });
-
+      // If partial refund, platform keeps the remainder (no additional credit)
       await tx
         .update(bookingsTable)
         .set({
@@ -845,15 +1000,16 @@ router.post("/:id/cancel", requireAccessToken, async (req, res) => {
     });
 
     // Notify the other party
-    const [vendorUser] = await db
-      .select({ userId: vendorProfilesTable.userId })
-      .from(vendorProfilesTable)
-      .where(eq(vendorProfilesTable.id, booking.vendorId))
-      .limit(1);
+    const refundNote =
+      refundAmount === 0
+        ? "No refund per vendor cancellation policy."
+        : refundAmount < totalAmount
+          ? `A partial refund of TZS ${refundAmount.toLocaleString()} has been issued per vendor policy.`
+          : `A full refund of TZS ${refundAmount.toLocaleString()} has been issued.`;
 
-    if (isCustomer && vendorUser) {
+    if (isCustomer && vendorProfile) {
       await createNotification(
-        vendorUser.userId,
+        vendorProfile.userId,
         "Booking Cancelled",
         `Booking ${booking.bookingRef} has been cancelled by the customer.`,
         "booking",
@@ -863,13 +1019,13 @@ router.post("/:id/cancel", requireAccessToken, async (req, res) => {
       await createNotification(
         booking.customerId,
         "Booking Cancelled",
-        `Your booking ${booking.bookingRef} has been cancelled. A full refund of TZS ${refundAmount.toLocaleString()} has been issued.`,
+        `Your booking ${booking.bookingRef} has been cancelled by the vendor. ${refundNote}`,
         "booking",
         { bookingId: booking.id }
       );
     }
 
-    res.json({ status: "cancelled", escrowStatus: "refunded", refundAmount });
+    res.json({ status: "cancelled", escrowStatus: "refunded", refundAmount, policy: vendorProfile?.cancellationPolicy ?? "full_refund" });
   } catch (err) {
     console.error("Cancel booking error:", err);
     res.status(500).json({ error: "Internal server error" });
