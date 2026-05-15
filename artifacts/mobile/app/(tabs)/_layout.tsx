@@ -25,6 +25,10 @@ function NativeCustomerLayout() {
         <Icon sf={{ default: "calendar", selected: "calendar.circle.fill" }} />
         <Label>Planner</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="bookings">
+        <Icon sf={{ default: "bookmark", selected: "bookmark.fill" }} />
+        <Label>Bookings</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="wallet">
         <Icon sf={{ default: "wallet.bifold", selected: "wallet.bifold.fill" }} />
         <Label>Wallet</Label>
