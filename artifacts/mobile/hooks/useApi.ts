@@ -3,6 +3,16 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN}`;
 
+/**
+ * Converts a server-side objectPath (e.g. /objects/<uuid>) into a fully
+ * qualified URL the mobile client can use in Image components.
+ * Strips the /objects/ prefix and builds the canonical storage serving URL.
+ */
+export function resolveObjectUrl(objectPath: string): string {
+  const entityId = objectPath.replace(/^\/objects\//, "");
+  return `${BASE_URL}/api/storage/objects/${entityId}`;
+}
+
 export async function apiRequest<T>(
   path: string,
   options: RequestInit = {}

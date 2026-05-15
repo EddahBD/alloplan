@@ -93,7 +93,9 @@ export default function SearchScreen() {
   }, [query]);
 
   const search = useCallback(async () => {
-    if (!debouncedQuery && !selectedCategory && !location) {
+    const hasTextQuery = debouncedQuery || selectedCategory || location;
+    const hasFilter = minRating || minPrice || maxPrice || onlyAvailable;
+    if (!hasTextQuery && !hasFilter) {
       setVendors([]);
       return;
     }
@@ -272,26 +274,33 @@ export default function SearchScreen() {
             <Ionicons name="chevron-forward" size={18} color={colors.border} />
           </TouchableOpacity>
         )}
-        ListEmptyComponent={
-          !loading && (debouncedQuery || selectedCategory || location) ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="search-outline" size={52} color={colors.border} />
-              <Text style={[styles.emptyTitle, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>
-                No results found
-              </Text>
-              <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]}>
-                Try a different search term or adjust your filters
-              </Text>
-            </View>
-          ) : !debouncedQuery && !selectedCategory && !location ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="storefront-outline" size={52} color={colors.border} />
-              <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]}>
-                Search for vendors, services, or locations
-              </Text>
-            </View>
-          ) : null
-        }
+        ListEmptyComponent={(() => {
+          const hasAny = debouncedQuery || selectedCategory || location || minRating || minPrice || maxPrice || onlyAvailable;
+          if (!loading && hasAny) {
+            return (
+              <View style={styles.emptyState}>
+                <Ionicons name="search-outline" size={52} color={colors.border} />
+                <Text style={[styles.emptyTitle, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>
+                  No results found
+                </Text>
+                <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]}>
+                  Try a different search term or adjust your filters
+                </Text>
+              </View>
+            );
+          }
+          if (!hasAny) {
+            return (
+              <View style={styles.emptyState}>
+                <Ionicons name="storefront-outline" size={52} color={colors.border} />
+                <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]}>
+                  Search for vendors, services, or locations
+                </Text>
+              </View>
+            );
+          }
+          return null;
+        })()}
         ListHeaderComponent={loading ? <ActivityIndicator color={colors.primary} style={styles.loader} /> : null}
       />
 

@@ -18,7 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
-import { apiRequest } from "@/hooks/useApi";
+import { apiRequest, resolveObjectUrl } from "@/hooks/useApi";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,8 +82,13 @@ const SERVICE_CATEGORIES = [
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Uploads an image to object storage.
+ * Returns a fully qualified URL the client can use in <Image> components.
+ * Throws on any failure — callers must NOT fall back to local URIs.
+ */
 async function uploadImage(localUri: string, mimeType: string): Promise<string> {
-  // 1. Request a presigned upload URL from the backend
+  // 1. Request a presigned PUT URL from the backend
   const { uploadURL, objectPath } = await apiRequest<{ uploadURL: string; objectPath: string }>(
     "/storage/uploads/request-url",
     {
@@ -92,21 +97,20 @@ async function uploadImage(localUri: string, mimeType: string): Promise<string> 
     },
   );
 
-  // 2. Upload the file directly to the presigned URL
+  // 2. Read the local file as a blob and PUT it to the presigned URL
   const fileResponse = await fetch(localUri);
+  if (!fileResponse.ok) throw new Error("Failed to read local image file");
   const blob = await fileResponse.blob();
+
   const putResponse = await fetch(uploadURL, {
     method: "PUT",
     body: blob,
     headers: { "Content-Type": mimeType },
   });
+  if (!putResponse.ok) throw new Error(`Storage upload failed (${putResponse.status})`);
 
-  if (!putResponse.ok) {
-    throw new Error(`Upload failed: ${putResponse.status}`);
-  }
-
-  // 3. Return the server-side objectPath (UUID-based, stable reference)
-  return objectPath;
+  // 3. Convert objectPath → absolute API URL usable in React Native <Image>
+  return resolveObjectUrl(objectPath);
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -406,13 +410,8 @@ export default function VendorDashboardScreen() {
     }
     setUploadingPortfolio(true);
     try {
-      let imageUrl = portPreviewUri;
-      // Upload to object storage
-      try {
-        imageUrl = await uploadImage(portPreviewUri, portMimeType);
-      } catch {
-        // Fallback: use local URI (will only work in development / same device)
-      }
+      // Upload to object storage — returns a fully qualified API URL
+      const imageUrl = await uploadImage(portPreviewUri, portMimeType);
 
       const item = await apiRequest<PortfolioItem>(`/vendors/${profile.id}/portfolio`, {
         method: "POST",
