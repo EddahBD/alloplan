@@ -11,6 +11,7 @@ import {
   Platform,
   Modal,
   ScrollView,
+  Switch,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -28,6 +29,18 @@ const SORT_OPTIONS = [
   { id: "price_asc", label: "Price: Low to High" },
   { id: "price_desc", label: "Price: High to Low" },
   { id: "newest", label: "Newest" },
+];
+
+const RATING_OPTIONS = [
+  { value: "", label: "Any" },
+  { value: "3", label: "3+ ★" },
+  { value: "4", label: "4+ ★" },
+  { value: "4.5", label: "4.5+ ★" },
+];
+
+const TANZANIA_CITIES = [
+  "Dar es Salaam", "Arusha", "Mwanza", "Dodoma",
+  "Mbeya", "Tanga", "Morogoro", "Zanzibar", "Kilimanjaro",
 ];
 
 interface VendorCard {
@@ -56,11 +69,16 @@ export default function SearchScreen() {
   const [vendors, setVendors] = useState<VendorCard[]>([]);
   const [loading, setLoading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+
+  // Filter state
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedSort, setSelectedSort] = useState("rating");
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [onlyAvailable, setOnlyAvailable] = useState(false);
+  const [minRating, setMinRating] = useState("");
+  const [location, setLocation] = useState("");
+
   const inputRef = useRef<TextInput>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -75,7 +93,7 @@ export default function SearchScreen() {
   }, [query]);
 
   const search = useCallback(async () => {
-    if (!debouncedQuery && !selectedCategory) {
+    if (!debouncedQuery && !selectedCategory && !location) {
       setVendors([]);
       return;
     }
@@ -87,6 +105,8 @@ export default function SearchScreen() {
       if (minPrice) params.set("minPrice", minPrice);
       if (maxPrice) params.set("maxPrice", maxPrice);
       if (onlyAvailable) params.set("available", "true");
+      if (minRating) params.set("minRating", minRating);
+      if (location) params.set("location", location);
 
       const data = await apiRequest<{ vendors: VendorCard[] }>(`/vendors?${params.toString()}`);
       setVendors(data.vendors);
@@ -95,13 +115,23 @@ export default function SearchScreen() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedQuery, selectedCategory, selectedSort, minPrice, maxPrice, onlyAvailable]);
+  }, [debouncedQuery, selectedCategory, selectedSort, minPrice, maxPrice, onlyAvailable, minRating, location]);
 
   useEffect(() => {
     search();
-  }, [debouncedQuery, selectedCategory, selectedSort, onlyAvailable]);
+  }, [debouncedQuery, selectedCategory, selectedSort, onlyAvailable, minRating, location]);
 
-  const activeFilters = [selectedCategory, minPrice, maxPrice, onlyAvailable].filter(Boolean).length;
+  const clearFilters = () => {
+    setSelectedCategory("");
+    setMinPrice("");
+    setMaxPrice("");
+    setOnlyAvailable(false);
+    setSelectedSort("rating");
+    setMinRating("");
+    setLocation("");
+  };
+
+  const activeFilterCount = [selectedCategory, minPrice, maxPrice, minRating, location, onlyAvailable].filter(Boolean).length;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -132,37 +162,46 @@ export default function SearchScreen() {
           </View>
           <TouchableOpacity
             testID="filter-btn"
-            style={[styles.filterBtn, { backgroundColor: activeFilters > 0 ? colors.primary : colors.card, borderColor: activeFilters > 0 ? colors.primary : colors.border }]}
+            style={[styles.filterBtn, {
+              backgroundColor: activeFilterCount > 0 ? colors.primary : colors.card,
+              borderColor: activeFilterCount > 0 ? colors.primary : colors.border,
+            }]}
             onPress={() => setShowFilters(true)}
           >
-            <Ionicons name="options-outline" size={18} color={activeFilters > 0 ? "#fff" : colors.foreground} />
-            {activeFilters > 0 && (
+            <Ionicons name="options-outline" size={18} color={activeFilterCount > 0 ? "#fff" : colors.foreground} />
+            {activeFilterCount > 0 && (
               <View style={[styles.filterBadge, { backgroundColor: "#fff" }]}>
-                <Text style={[styles.filterBadgeText, { color: colors.primary }]}>{activeFilters}</Text>
+                <Text style={[styles.filterBadgeText, { color: colors.primary }]}>{activeFilterCount}</Text>
               </View>
             )}
           </TouchableOpacity>
         </View>
 
         {/* Active filter chips */}
-        {(selectedCategory || onlyAvailable) && (
+        {(selectedCategory || onlyAvailable || minRating || location) && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
             {selectedCategory && (
-              <TouchableOpacity
-                style={[styles.activeChip, { backgroundColor: colors.secondary, borderColor: colors.primary }]}
-                onPress={() => setSelectedCategory("")}
-              >
-                <Text style={[styles.activeChipText, { color: colors.primary, fontFamily: "Poppins_500Medium" }]}>
-                  {selectedCategory}
-                </Text>
+              <TouchableOpacity style={[styles.activeChip, { backgroundColor: colors.secondary, borderColor: colors.primary }]} onPress={() => setSelectedCategory("")}>
+                <Text style={[styles.activeChipText, { color: colors.primary, fontFamily: "Poppins_500Medium" }]}>{selectedCategory}</Text>
+                <Ionicons name="close" size={13} color={colors.primary} />
+              </TouchableOpacity>
+            )}
+            {minRating && (
+              <TouchableOpacity style={[styles.activeChip, { backgroundColor: colors.secondary, borderColor: colors.primary }]} onPress={() => setMinRating("")}>
+                <Ionicons name="star" size={11} color={colors.primary} />
+                <Text style={[styles.activeChipText, { color: colors.primary, fontFamily: "Poppins_500Medium" }]}>{minRating}+</Text>
+                <Ionicons name="close" size={13} color={colors.primary} />
+              </TouchableOpacity>
+            )}
+            {location && (
+              <TouchableOpacity style={[styles.activeChip, { backgroundColor: colors.secondary, borderColor: colors.primary }]} onPress={() => setLocation("")}>
+                <Ionicons name="location-outline" size={11} color={colors.primary} />
+                <Text style={[styles.activeChipText, { color: colors.primary, fontFamily: "Poppins_500Medium" }]}>{location}</Text>
                 <Ionicons name="close" size={13} color={colors.primary} />
               </TouchableOpacity>
             )}
             {onlyAvailable && (
-              <TouchableOpacity
-                style={[styles.activeChip, { backgroundColor: colors.secondary, borderColor: colors.primary }]}
-                onPress={() => setOnlyAvailable(false)}
-              >
+              <TouchableOpacity style={[styles.activeChip, { backgroundColor: colors.secondary, borderColor: colors.primary }]} onPress={() => setOnlyAvailable(false)}>
                 <Text style={[styles.activeChipText, { color: colors.primary, fontFamily: "Poppins_500Medium" }]}>Available</Text>
                 <Ionicons name="close" size={13} color={colors.primary} />
               </TouchableOpacity>
@@ -234,7 +273,7 @@ export default function SearchScreen() {
           </TouchableOpacity>
         )}
         ListEmptyComponent={
-          !loading && (debouncedQuery || selectedCategory) ? (
+          !loading && (debouncedQuery || selectedCategory || location) ? (
             <View style={styles.emptyState}>
               <Ionicons name="search-outline" size={52} color={colors.border} />
               <Text style={[styles.emptyTitle, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>
@@ -244,7 +283,7 @@ export default function SearchScreen() {
                 Try a different search term or adjust your filters
               </Text>
             </View>
-          ) : !debouncedQuery && !selectedCategory ? (
+          ) : !debouncedQuery && !selectedCategory && !location ? (
             <View style={styles.emptyState}>
               <Ionicons name="storefront-outline" size={52} color={colors.border} />
               <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]}>
@@ -262,20 +301,14 @@ export default function SearchScreen() {
           <View style={[styles.filterSheet, { backgroundColor: colors.background }]}>
             <View style={styles.filterHeader}>
               <Text style={[styles.filterTitle, { color: colors.foreground, fontFamily: "Poppins_700Bold" }]}>Filters</Text>
-              <TouchableOpacity onPress={() => {
-                setSelectedCategory("");
-                setMinPrice("");
-                setMaxPrice("");
-                setOnlyAvailable(false);
-                setSelectedSort("rating");
-              }}>
+              <TouchableOpacity onPress={clearFilters}>
                 <Text style={[styles.clearText, { color: colors.primary, fontFamily: "Poppins_500Medium" }]}>Clear All</Text>
               </TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
               {/* Category */}
               <Text style={[styles.filterLabel, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>Category</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryChipRow}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRowH}>
                 {CATEGORIES.map((cat) => (
                   <TouchableOpacity
                     key={cat}
@@ -294,6 +327,70 @@ export default function SearchScreen() {
                   </TouchableOpacity>
                 ))}
               </ScrollView>
+
+              {/* Location */}
+              <Text style={[styles.filterLabel, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>Location</Text>
+              <View style={[styles.locationInput, { borderColor: colors.border, backgroundColor: colors.muted }]}>
+                <Ionicons name="location-outline" size={16} color={colors.mutedForeground} />
+                <TextInput
+                  testID="location-filter-input"
+                  style={[styles.locationTextInput, { color: colors.foreground, fontFamily: "Poppins_400Regular" }]}
+                  placeholder="e.g. Dar es Salaam"
+                  placeholderTextColor={colors.mutedForeground}
+                  value={location}
+                  onChangeText={setLocation}
+                />
+                {location.length > 0 && (
+                  <TouchableOpacity onPress={() => setLocation("")}>
+                    <Ionicons name="close-circle" size={16} color={colors.mutedForeground} />
+                  </TouchableOpacity>
+                )}
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRowH}>
+                {TANZANIA_CITIES.map((city) => (
+                  <TouchableOpacity
+                    key={city}
+                    testID={`city-chip-${city}`}
+                    onPress={() => setLocation(location === city ? "" : city)}
+                    style={[styles.categoryChip, {
+                      backgroundColor: location === city ? colors.primary : colors.card,
+                      borderColor: location === city ? colors.primary : colors.border,
+                    }]}
+                  >
+                    <Text style={[styles.categoryChipText, {
+                      color: location === city ? "#fff" : colors.foreground,
+                      fontFamily: "Poppins_400Regular",
+                    }]}>{city}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {/* Minimum Rating */}
+              <Text style={[styles.filterLabel, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>Minimum Rating</Text>
+              <View style={styles.ratingRow}>
+                {RATING_OPTIONS.map((opt) => (
+                  <TouchableOpacity
+                    key={opt.value}
+                    testID={`rating-option-${opt.value}`}
+                    onPress={() => setMinRating(opt.value)}
+                    style={[
+                      styles.ratingChip,
+                      {
+                        backgroundColor: minRating === opt.value ? colors.primary : colors.card,
+                        borderColor: minRating === opt.value ? colors.primary : colors.border,
+                      },
+                    ]}
+                  >
+                    {opt.value && <Ionicons name="star" size={12} color={minRating === opt.value ? "#fff" : colors.accent} />}
+                    <Text style={[styles.ratingChipText, {
+                      color: minRating === opt.value ? "#fff" : colors.foreground,
+                      fontFamily: minRating === opt.value ? "Poppins_600SemiBold" : "Poppins_400Regular",
+                    }]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
               {/* Sort */}
               <Text style={[styles.filterLabel, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>Sort By</Text>
@@ -321,7 +418,7 @@ export default function SearchScreen() {
                   value={minPrice}
                   onChangeText={setMinPrice}
                 />
-                <Text style={[{ color: colors.mutedForeground }]}>—</Text>
+                <Text style={{ color: colors.mutedForeground }}>—</Text>
                 <TextInput
                   style={[styles.priceInput, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.muted, fontFamily: "Poppins_400Regular" }]}
                   placeholder="Max"
@@ -333,22 +430,26 @@ export default function SearchScreen() {
               </View>
 
               {/* Availability */}
-              <TouchableOpacity
-                style={[styles.availRow, { borderColor: colors.border }]}
-                onPress={() => setOnlyAvailable(!onlyAvailable)}
-              >
+              <View style={[styles.availRow, { borderColor: colors.border }]}>
                 <Text style={[styles.availText, { color: colors.foreground, fontFamily: "Poppins_500Medium" }]}>Available Now Only</Text>
-                <View style={[styles.checkbox, { borderColor: onlyAvailable ? colors.primary : colors.border, backgroundColor: onlyAvailable ? colors.primary : "transparent" }]}>
-                  {onlyAvailable && <Ionicons name="checkmark" size={14} color="#fff" />}
-                </View>
-              </TouchableOpacity>
+                <Switch
+                  testID="available-toggle"
+                  value={onlyAvailable}
+                  onValueChange={setOnlyAvailable}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#fff"
+                />
+              </View>
             </ScrollView>
 
             <TouchableOpacity
+              testID="apply-filters-btn"
               style={[styles.applyBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
               onPress={() => { setShowFilters(false); search(); }}
             >
-              <Text style={[styles.applyBtnText, { color: "#fff", fontFamily: "Poppins_600SemiBold" }]}>Apply Filters</Text>
+              <Text style={[styles.applyBtnText, { color: "#fff", fontFamily: "Poppins_600SemiBold" }]}>
+                Apply Filters {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -368,6 +469,7 @@ const styles = StyleSheet.create({
   filterBadge: { position: "absolute", top: -4, right: -4, width: 16, height: 16, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   filterBadgeText: { fontSize: 9 },
   chipRow: { gap: 8, paddingHorizontal: 2 },
+  chipRowH: { gap: 8, marginBottom: 8 },
   activeChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1 },
   activeChipText: { fontSize: 12 },
   listContent: { padding: 16, gap: 12 },
@@ -390,11 +492,16 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 13, textAlign: "center", lineHeight: 20 },
   loader: { marginTop: 32 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  filterSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: "90%", gap: 16 },
+  filterSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: "92%", gap: 16 },
   filterHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   filterTitle: { fontSize: 20 },
   clearText: { fontSize: 14 },
   filterLabel: { fontSize: 15, marginTop: 16, marginBottom: 10 },
+  locationInput: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, height: 44, gap: 8, marginBottom: 10 },
+  locationTextInput: { flex: 1, fontSize: 14 },
+  ratingRow: { flexDirection: "row", gap: 8, marginBottom: 8, flexWrap: "wrap" },
+  ratingChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
+  ratingChipText: { fontSize: 13 },
   categoryChipRow: { gap: 8, marginBottom: 8 },
   categoryChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
   categoryChipText: { fontSize: 13 },
@@ -404,7 +511,6 @@ const styles = StyleSheet.create({
   priceInput: { flex: 1, height: 44, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, fontSize: 14 },
   availRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14, borderTopWidth: 1, marginTop: 8 },
   availText: { fontSize: 14 },
-  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, alignItems: "center", justifyContent: "center" },
   applyBtn: { paddingVertical: 14, alignItems: "center", marginTop: 16 },
   applyBtnText: { fontSize: 16 },
 });

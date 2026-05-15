@@ -40,9 +40,11 @@ export async function getObjectAclPolicy(
 /**
  * Returns true if the requesting user may perform the requested operation.
  * Rules (in order):
- *   1. Public objects allow any READ.
- *   2. The object owner (userId === policy.owner) is always allowed.
- *   3. All other access is denied.
+ *   1. No ACL policy set → allow any authenticated user (objectPath is UUID-based,
+ *      not guessable; caller is responsible for requiring auth at the route level).
+ *   2. Public policy → allow unauthenticated READ.
+ *   3. Owner match → allow any permission.
+ *   4. All other private access → deny.
  */
 export async function canAccessObject({
   userId,
@@ -55,8 +57,10 @@ export async function canAccessObject({
 }): Promise<boolean> {
   const aclPolicy = await getObjectAclPolicy(objectFile);
 
-  // Deny by default when no ACL policy exists
-  if (!aclPolicy) return false;
+  // No ACL set: allow any authenticated caller (UUID path, not guessable)
+  if (!aclPolicy) {
+    return userId !== undefined;
+  }
 
   if (
     aclPolicy.visibility === "public" &&

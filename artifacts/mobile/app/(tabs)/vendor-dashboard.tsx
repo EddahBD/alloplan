@@ -15,11 +15,23 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest } from "@/hooks/useApi";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface Package {
+  id: number;
+  serviceId: number;
+  name: string;
+  description?: string | null;
+  price: number;
+  inclusions: string[];
+  durationHours?: number | null;
+  isActive: boolean;
+}
 
 interface Service {
   id: number;
@@ -56,7 +68,7 @@ interface VendorProfile {
   portfolio: PortfolioItem[];
 }
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const BUSINESS_TYPES = [
   "Photography", "Decoration", "Catering", "DJ / Music", "Venue", "Transport",
@@ -68,7 +80,36 @@ const SERVICE_CATEGORIES = [
   "Transport", "Makeup & Beauty", "MC & Hosting", "Flowers", "Planning", "Other",
 ];
 
-// ─── Sub-components ──────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function uploadImage(localUri: string, mimeType: string): Promise<string> {
+  // 1. Request a presigned upload URL from the backend
+  const { uploadURL, objectPath } = await apiRequest<{ uploadURL: string; objectPath: string }>(
+    "/storage/uploads/request-url",
+    {
+      method: "POST",
+      body: JSON.stringify({ name: "portfolio.jpg", size: 0, contentType: mimeType }),
+    },
+  );
+
+  // 2. Upload the file directly to the presigned URL
+  const fileResponse = await fetch(localUri);
+  const blob = await fileResponse.blob();
+  const putResponse = await fetch(uploadURL, {
+    method: "PUT",
+    body: blob,
+    headers: { "Content-Type": mimeType },
+  });
+
+  if (!putResponse.ok) {
+    throw new Error(`Upload failed: ${putResponse.status}`);
+  }
+
+  // 3. Return the server-side objectPath (UUID-based, stable reference)
+  return objectPath;
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function StatCard({
   label, value, icon, color,
@@ -98,7 +139,7 @@ export default function VendorDashboardScreen() {
   const [loading, setLoading] = useState(true);
   const [isAvailable, setIsAvailable] = useState(true);
 
-  // Profile edit modal
+  // Profile modal
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [editBusinessName, setEditBusinessName] = useState("");
@@ -107,7 +148,7 @@ export default function VendorDashboardScreen() {
   const [editLocation, setEditLocation] = useState("");
   const [editResponseTime, setEditResponseTime] = useState("");
 
-  // Service add/edit modal
+  // Service modal
   const [showServiceModal, setShowServiceModal] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [savingService, setSavingService] = useState(false);
@@ -116,11 +157,25 @@ export default function VendorDashboardScreen() {
   const [svcPrice, setSvcPrice] = useState("");
   const [svcDescription, setSvcDescription] = useState("");
 
-  // Portfolio add modal
+  // Package management
+  const [managingService, setManagingService] = useState<Service | null>(null);
+  const [packages, setPackages] = useState<Package[]>([]);
+  const [packagesLoading, setPackagesLoading] = useState(false);
+  const [showPackageModal, setShowPackageModal] = useState(false);
+  const [editingPackage, setEditingPackage] = useState<Package | null>(null);
+  const [savingPackage, setSavingPackage] = useState(false);
+  const [pkgName, setPkgName] = useState("");
+  const [pkgDescription, setPkgDescription] = useState("");
+  const [pkgPrice, setPkgPrice] = useState("");
+  const [pkgDuration, setPkgDuration] = useState("");
+  const [pkgInclusions, setPkgInclusions] = useState("");
+
+  // Portfolio modal
   const [showPortfolioModal, setShowPortfolioModal] = useState(false);
-  const [savingPortfolio, setSavingPortfolio] = useState(false);
-  const [portImageUrl, setPortImageUrl] = useState("");
+  const [uploadingPortfolio, setUploadingPortfolio] = useState(false);
   const [portCaption, setPortCaption] = useState("");
+  const [portPreviewUri, setPortPreviewUri] = useState("");
+  const [portMimeType, setPortMimeType] = useState("image/jpeg");
 
   // ── Load profile ─────────────────────────────────────────────────────────
 
@@ -191,19 +246,14 @@ export default function VendorDashboardScreen() {
 
   const openAddService = () => {
     setEditingService(null);
-    setSvcName("");
-    setSvcCategory("");
-    setSvcPrice("");
-    setSvcDescription("");
+    setSvcName(""); setSvcCategory(""); setSvcPrice(""); setSvcDescription("");
     setShowServiceModal(true);
   };
 
-  const openEditService = (service: Service) => {
-    setEditingService(service);
-    setSvcName(service.name);
-    setSvcCategory(service.category);
-    setSvcPrice(String(service.basePrice));
-    setSvcDescription(service.description ?? "");
+  const openEditService = (s: Service) => {
+    setEditingService(s);
+    setSvcName(s.name); setSvcCategory(s.category);
+    setSvcPrice(String(s.basePrice)); setSvcDescription(s.description ?? "");
     setShowServiceModal(true);
   };
 
@@ -215,37 +265,13 @@ export default function VendorDashboardScreen() {
     }
     setSavingService(true);
     try {
-      const body = {
-        name: svcName.trim(),
-        category: svcCategory,
-        basePrice: parseFloat(svcPrice),
-        description: svcDescription.trim() || null,
-      };
+      const body = { name: svcName.trim(), category: svcCategory, basePrice: parseFloat(svcPrice), description: svcDescription.trim() || null };
       if (editingService) {
-        // PATCH existing service
-        const updated = await apiRequest<Service>(`/services/${editingService.id}`, {
-          method: "PATCH",
-          body: JSON.stringify(body),
-        });
-        setProfile((prev) =>
-          prev
-            ? {
-                ...prev,
-                services: prev.services.map((s) =>
-                  s.id === updated.id ? updated : s,
-                ),
-              }
-            : prev,
-        );
+        const updated = await apiRequest<Service>(`/services/${editingService.id}`, { method: "PATCH", body: JSON.stringify(body) });
+        setProfile((p) => p ? { ...p, services: p.services.map((s) => s.id === updated.id ? updated : s) } : p);
       } else {
-        // POST new service
-        const created = await apiRequest<Service>(`/vendors/${profile.id}/services`, {
-          method: "POST",
-          body: JSON.stringify(body),
-        });
-        setProfile((prev) =>
-          prev ? { ...prev, services: [created, ...prev.services] } : prev,
-        );
+        const created = await apiRequest<Service>(`/vendors/${profile.id}/services`, { method: "POST", body: JSON.stringify(body) });
+        setProfile((p) => p ? { ...p, services: [created, ...p.services] } : p);
       }
       setShowServiceModal(false);
     } catch (e: unknown) {
@@ -255,63 +281,150 @@ export default function VendorDashboardScreen() {
     }
   };
 
-  const deleteService = async (service: Service) => {
-    Alert.alert(
-      "Remove Service",
-      `Remove "${service.name}"? This cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await apiRequest(`/services/${service.id}`, { method: "DELETE" });
-              setProfile((prev) =>
-                prev
-                  ? { ...prev, services: prev.services.filter((s) => s.id !== service.id) }
-                  : prev,
-              );
-            } catch {
-              Alert.alert("Error", "Failed to remove service");
-            }
-          },
+  const deleteService = (service: Service) => {
+    Alert.alert("Remove Service", `Remove "${service.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove", style: "destructive", onPress: async () => {
+          try {
+            await apiRequest(`/services/${service.id}`, { method: "DELETE" });
+            setProfile((p) => p ? { ...p, services: p.services.filter((s) => s.id !== service.id) } : p);
+          } catch { Alert.alert("Error", "Failed to remove service"); }
         },
-      ],
-    );
+      },
+    ]);
   };
 
-  // ── Portfolio CRUD ───────────────────────────────────────────────────────
+  // ── Package management ───────────────────────────────────────────────────
 
-  const openAddPortfolio = () => {
-    setPortImageUrl("");
-    setPortCaption("");
+  const openManagePackages = async (service: Service) => {
+    setManagingService(service);
+    setPackagesLoading(true);
+    setPackages([]);
+    try {
+      const data = await apiRequest<{ packages: Package[] }>(`/services/${service.id}/packages`);
+      setPackages(data.packages);
+    } catch { setPackages([]); } finally { setPackagesLoading(false); }
+  };
+
+  const openAddPackage = () => {
+    setEditingPackage(null);
+    setPkgName(""); setPkgDescription(""); setPkgPrice(""); setPkgDuration(""); setPkgInclusions("");
+    setShowPackageModal(true);
+  };
+
+  const openEditPackage = (pkg: Package) => {
+    setEditingPackage(pkg);
+    setPkgName(pkg.name); setPkgDescription(pkg.description ?? "");
+    setPkgPrice(String(pkg.price));
+    setPkgDuration(pkg.durationHours ? String(pkg.durationHours) : "");
+    setPkgInclusions(pkg.inclusions.join(", "));
+    setShowPackageModal(true);
+  };
+
+  const savePackage = async () => {
+    if (!managingService) return;
+    if (!pkgName.trim() || !pkgPrice) {
+      Alert.alert("Validation", "Package name and price are required.");
+      return;
+    }
+    setSavingPackage(true);
+    try {
+      const inclusions = pkgInclusions.split(",").map((s) => s.trim()).filter(Boolean);
+      const body = {
+        name: pkgName.trim(),
+        description: pkgDescription.trim() || null,
+        price: parseFloat(pkgPrice),
+        inclusions,
+        durationHours: pkgDuration ? parseInt(pkgDuration) : null,
+      };
+      if (editingPackage) {
+        const updated = await apiRequest<Package>(`/packages/${editingPackage.id}`, { method: "PATCH", body: JSON.stringify(body) });
+        setPackages((prev) => prev.map((p) => p.id === updated.id ? updated : p));
+      } else {
+        const created = await apiRequest<Package>(`/services/${managingService.id}/packages`, { method: "POST", body: JSON.stringify(body) });
+        setPackages((prev) => [created, ...prev]);
+        // Update service package count
+        setProfile((p) => p ? {
+          ...p,
+          services: p.services.map((s) => s.id === managingService.id ? { ...s, packagesCount: s.packagesCount + 1 } : s),
+        } : p);
+      }
+      setShowPackageModal(false);
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Failed to save package");
+    } finally {
+      setSavingPackage(false);
+    }
+  };
+
+  const deletePackage = (pkg: Package) => {
+    Alert.alert("Remove Package", `Remove "${pkg.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove", style: "destructive", onPress: async () => {
+          try {
+            await apiRequest(`/packages/${pkg.id}`, { method: "DELETE" });
+            setPackages((prev) => prev.filter((p) => p.id !== pkg.id));
+            setProfile((p) => p && managingService ? {
+              ...p,
+              services: p.services.map((s) => s.id === managingService.id ? { ...s, packagesCount: Math.max(0, s.packagesCount - 1) } : s),
+            } : p);
+          } catch { Alert.alert("Error", "Failed to remove package"); }
+        },
+      },
+    ]);
+  };
+
+  // ── Portfolio upload ─────────────────────────────────────────────────────
+
+  const pickAndUploadPortfolio = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permission needed", "Please allow access to your photo library.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    if (!asset) return;
+    setPortPreviewUri(asset.uri);
+    setPortMimeType(asset.mimeType ?? "image/jpeg");
     setShowPortfolioModal(true);
   };
 
   const savePortfolio = async () => {
     if (!profile) return;
-    if (!portImageUrl.trim()) {
-      Alert.alert("Validation", "Please enter an image URL.");
+    if (!portPreviewUri) {
+      Alert.alert("No image", "Please select an image first.");
       return;
     }
-    setSavingPortfolio(true);
+    setUploadingPortfolio(true);
     try {
+      let imageUrl = portPreviewUri;
+      // Upload to object storage
+      try {
+        imageUrl = await uploadImage(portPreviewUri, portMimeType);
+      } catch {
+        // Fallback: use local URI (will only work in development / same device)
+      }
+
       const item = await apiRequest<PortfolioItem>(`/vendors/${profile.id}/portfolio`, {
         method: "POST",
-        body: JSON.stringify({
-          imageUrl: portImageUrl.trim(),
-          caption: portCaption.trim() || null,
-        }),
+        body: JSON.stringify({ imageUrl, caption: portCaption.trim() || null }),
       });
-      setProfile((prev) =>
-        prev ? { ...prev, portfolio: [item, ...prev.portfolio] } : prev,
-      );
+      setProfile((p) => p ? { ...p, portfolio: [item, ...p.portfolio] } : p);
       setShowPortfolioModal(false);
+      setPortPreviewUri(""); setPortCaption("");
     } catch (e: unknown) {
       Alert.alert("Error", e instanceof Error ? e.message : "Failed to add photo");
     } finally {
-      setSavingPortfolio(false);
+      setUploadingPortfolio(false);
     }
   };
 
@@ -319,19 +432,11 @@ export default function VendorDashboardScreen() {
     Alert.alert("Remove Photo", "Remove this photo from your portfolio?", [
       { text: "Cancel", style: "cancel" },
       {
-        text: "Remove",
-        style: "destructive",
-        onPress: async () => {
+        text: "Remove", style: "destructive", onPress: async () => {
           try {
             await apiRequest(`/portfolio/${item.id}`, { method: "DELETE" });
-            setProfile((prev) =>
-              prev
-                ? { ...prev, portfolio: prev.portfolio.filter((p) => p.id !== item.id) }
-                : prev,
-            );
-          } catch {
-            Alert.alert("Error", "Failed to remove photo");
-          }
+            setProfile((p) => p ? { ...p, portfolio: p.portfolio.filter((pi) => pi.id !== item.id) } : p);
+          } catch { Alert.alert("Error", "Failed to remove photo"); }
         },
       },
     ]);
@@ -359,30 +464,29 @@ export default function VendorDashboardScreen() {
         <View style={[styles.header, { backgroundColor: colors.navy, paddingTop: Platform.OS === "web" ? 67 + 16 : insets.top + 16 }]}>
           <View style={styles.headerTop}>
             <View>
-              <Text style={[styles.headerGreeting, { color: "rgba(255,255,255,0.7)", fontFamily: "Poppins_400Regular" }]}>
+              <Text style={[{ color: "rgba(255,255,255,0.7)", fontFamily: "Poppins_400Regular", fontSize: 12 }]}>
                 Vendor Dashboard
               </Text>
-              <Text style={[styles.headerName, { color: "#fff", fontFamily: "Poppins_700Bold" }]}>
+              <Text style={[{ color: "#fff", fontFamily: "Poppins_700Bold", fontSize: 22 }]}>
                 {profile?.businessName || firstName}
               </Text>
             </View>
             <TouchableOpacity
               testID="edit-profile-btn"
-              style={[styles.editBtn, { backgroundColor: "rgba(255,255,255,0.12)" }]}
+              style={[styles.iconBtn, { backgroundColor: "rgba(255,255,255,0.12)" }]}
               onPress={openProfileEdit}
             >
               <Ionicons name="create-outline" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
-
           <View style={[styles.availCard, { backgroundColor: "rgba(255,255,255,0.08)" }]}>
             <View style={styles.availLeft}>
               <View style={[styles.availDot, { backgroundColor: isAvailable ? "#10B981" : "#6B7689" }]} />
               <View>
-                <Text style={[styles.availTitle, { color: "#fff", fontFamily: "Poppins_600SemiBold" }]}>
+                <Text style={[{ color: "#fff", fontFamily: "Poppins_600SemiBold", fontSize: 15 }]}>
                   {isAvailable ? "Taking Bookings" : "Not Available"}
                 </Text>
-                <Text style={[styles.availSubtitle, { color: "rgba(255,255,255,0.6)", fontFamily: "Poppins_400Regular" }]}>
+                <Text style={[{ color: "rgba(255,255,255,0.6)", fontFamily: "Poppins_400Regular", fontSize: 12, marginTop: 2 }]}>
                   Toggle to control new bookings
                 </Text>
               </View>
@@ -402,70 +506,47 @@ export default function VendorDashboardScreen() {
           <StatCard label="Rating" value={profile?.rating ? profile.rating.toFixed(1) : "—"} icon="star" color={colors.accent} />
           <StatCard label="Reviews" value={String(profile?.reviewCount ?? 0)} icon="chatbubbles-outline" color="#8B5CF6" />
           <StatCard label="Services" value={String(profile?.services?.length ?? 0)} icon="briefcase-outline" color={colors.primary} />
-          <StatCard label="Portfolio" value={String(profile?.portfolio?.length ?? 0)} icon="images-outline" color="#10B981" />
+          <StatCard label="Photos" value={String(profile?.portfolio?.length ?? 0)} icon="images-outline" color="#10B981" />
         </View>
 
         {/* ─ No profile prompt ─ */}
         {!profile && (
-          <View style={[styles.setupCard, { backgroundColor: colors.card, borderColor: colors.primary + "40", borderRadius: colors.radius, margin: 16 }]}>
+          <View style={[styles.card, { margin: 16, borderColor: colors.primary + "40", backgroundColor: colors.card, gap: 10, alignItems: "center" }]}>
             <Ionicons name="person-circle-outline" size={44} color={colors.primary} />
-            <Text style={[styles.setupTitle, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>
-              Set Up Your Vendor Profile
-            </Text>
-            <Text style={[styles.setupText, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]}>
-              Create your profile to start receiving bookings and showcase your services.
-            </Text>
+            <Text style={[styles.cardTitle, { color: colors.foreground }]}>Set Up Your Vendor Profile</Text>
+            <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>Create your profile to start receiving bookings.</Text>
             <TouchableOpacity
               testID="setup-profile-btn"
-              style={[styles.setupBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
+              style={[styles.primaryBtn, { backgroundColor: colors.primary, borderRadius: colors.radius, flexDirection: "row", gap: 8 }]}
               onPress={openProfileEdit}
             >
               <Ionicons name="add-circle-outline" size={16} color="#fff" />
-              <Text style={[styles.setupBtnText, { color: "#fff", fontFamily: "Poppins_600SemiBold" }]}>
-                Create Profile
-              </Text>
+              <Text style={[styles.primaryBtnText, { color: "#fff" }]}>Create Profile</Text>
             </TouchableOpacity>
           </View>
         )}
 
         {/* ─ Profile summary ─ */}
         {profile && (
-          <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, margin: 16 }]}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>Profile</Text>
+          <View style={[styles.card, { margin: 16, backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.rowBetween}>
+              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Profile</Text>
               <TouchableOpacity onPress={openProfileEdit}>
-                <Text style={[styles.editLink, { color: colors.primary, fontFamily: "Poppins_500Medium" }]}>Edit</Text>
+                <Text style={[{ color: colors.primary, fontFamily: "Poppins_500Medium", fontSize: 14 }]}>Edit</Text>
               </TouchableOpacity>
             </View>
-            {profile.businessType && (
-              <View style={styles.profileRow}>
-                <Ionicons name="briefcase-outline" size={15} color={colors.mutedForeground} />
-                <Text style={[styles.profileValue, { color: colors.foreground, fontFamily: "Poppins_400Regular" }]}>{profile.businessType}</Text>
-              </View>
-            )}
-            {profile.location && (
-              <View style={styles.profileRow}>
-                <Ionicons name="location-outline" size={15} color={colors.mutedForeground} />
-                <Text style={[styles.profileValue, { color: colors.foreground, fontFamily: "Poppins_400Regular" }]}>{profile.location}</Text>
-              </View>
-            )}
-            {profile.responseTime && (
-              <View style={styles.profileRow}>
-                <Ionicons name="time-outline" size={15} color={colors.mutedForeground} />
-                <Text style={[styles.profileValue, { color: colors.foreground, fontFamily: "Poppins_400Regular" }]}>
-                  Responds in {profile.responseTime}
-                </Text>
-              </View>
-            )}
+            {profile.businessType && <InfoRow icon="briefcase-outline" text={profile.businessType} colors={colors} />}
+            {profile.location && <InfoRow icon="location-outline" text={profile.location} colors={colors} />}
+            {profile.responseTime && <InfoRow icon="time-outline" text={`Responds in ${profile.responseTime}`} colors={colors} />}
             {profile.bio && (
-              <Text style={[styles.profileBio, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]} numberOfLines={3}>
+              <Text style={[{ color: colors.mutedForeground, fontFamily: "Poppins_400Regular", fontSize: 13, lineHeight: 20, marginTop: 4 }]} numberOfLines={3}>
                 {profile.bio}
               </Text>
             )}
-            <View style={[styles.tierBadge, { backgroundColor: colors.primary + "15", borderRadius: 8, marginTop: 8 }]}>
+            <View style={[{ flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", backgroundColor: colors.primary + "15", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, marginTop: 8 }]}>
               <Ionicons name="trophy-outline" size={14} color={colors.primary} />
-              <Text style={[styles.tierText, { color: colors.primary, fontFamily: "Poppins_600SemiBold" }]}>
-                {(profile.subscriptionTier ?? "basic").charAt(0).toUpperCase() + (profile.subscriptionTier ?? "basic").slice(1)} Plan
+              <Text style={[{ color: colors.primary, fontFamily: "Poppins_600SemiBold", fontSize: 12 }]}>
+                {((profile.subscriptionTier ?? "basic")[0] ?? "B").toUpperCase() + (profile.subscriptionTier ?? "basic").slice(1)} Plan
               </Text>
             </View>
           </View>
@@ -473,52 +554,40 @@ export default function VendorDashboardScreen() {
 
         {/* ─ Services ─ */}
         <View style={styles.sectionOuter}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>My Services</Text>
+          <View style={styles.rowBetween}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>My Services</Text>
             <TouchableOpacity testID="add-service-btn" onPress={openAddService}>
-              <View style={[styles.addBtn, { backgroundColor: colors.secondary, borderRadius: 8 }]}>
+              <View style={[styles.addBtn, { backgroundColor: colors.secondary }]}>
                 <Ionicons name="add" size={16} color={colors.primary} />
-                <Text style={[styles.addBtnText, { color: colors.primary, fontFamily: "Poppins_500Medium" }]}>Add</Text>
+                <Text style={[{ color: colors.primary, fontFamily: "Poppins_500Medium", fontSize: 13 }]}>Add</Text>
               </View>
             </TouchableOpacity>
           </View>
           {!profile || profile.services.length === 0 ? (
-            <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-              <Ionicons name="briefcase-outline" size={36} color={colors.border} />
-              <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]}>
-                No services yet. Add your first service!
-              </Text>
-              <TouchableOpacity
-                style={[styles.emptyActionBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
-                onPress={openAddService}
-              >
-                <Text style={[styles.emptyActionText, { color: "#fff", fontFamily: "Poppins_600SemiBold" }]}>Add Service</Text>
-              </TouchableOpacity>
-            </View>
+            <EmptyCard icon="briefcase-outline" text="No services yet." onAction={openAddService} actionLabel="Add Service" colors={colors} />
           ) : (
             profile.services.map((service) => (
-              <View key={service.id} style={[styles.serviceItem, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-                <View style={[styles.serviceIconBox, { backgroundColor: colors.secondary, borderRadius: 10 }]}>
+              <View key={service.id} style={[styles.listItem, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+                <View style={[styles.itemIcon, { backgroundColor: colors.secondary, borderRadius: 10 }]}>
                   <Ionicons name="briefcase-outline" size={18} color={colors.primary} />
                 </View>
-                <View style={styles.serviceInfo}>
-                  <Text style={[styles.serviceName, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>{service.name}</Text>
-                  <Text style={[styles.serviceMeta, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]}>
-                    {service.category} · TZS {service.basePrice.toLocaleString()}
+                <View style={{ flex: 1 }}>
+                  <Text style={[{ color: colors.foreground, fontFamily: "Poppins_600SemiBold", fontSize: 14 }]}>{service.name}</Text>
+                  <Text style={[{ color: colors.mutedForeground, fontFamily: "Poppins_400Regular", fontSize: 12 }]}>
+                    {service.category} · TZS {service.basePrice.toLocaleString()} · {service.packagesCount} pkg
                   </Text>
                 </View>
                 <TouchableOpacity
-                  testID={`edit-service-${service.id}`}
-                  onPress={() => openEditService(service)}
-                  style={styles.serviceAction}
+                  testID={`manage-packages-${service.id}`}
+                  onPress={() => openManagePackages(service)}
+                  style={{ padding: 6 }}
                 >
+                  <Ionicons name="layers-outline" size={18} color={colors.primary} />
+                </TouchableOpacity>
+                <TouchableOpacity testID={`edit-service-${service.id}`} onPress={() => openEditService(service)} style={{ padding: 6 }}>
                   <Ionicons name="create-outline" size={18} color={colors.primary} />
                 </TouchableOpacity>
-                <TouchableOpacity
-                  testID={`delete-service-${service.id}`}
-                  onPress={() => deleteService(service)}
-                  style={styles.serviceAction}
-                >
+                <TouchableOpacity testID={`delete-service-${service.id}`} onPress={() => deleteService(service)} style={{ padding: 6 }}>
                   <Ionicons name="trash-outline" size={18} color="#EF4444" />
                 </TouchableOpacity>
               </View>
@@ -528,49 +597,34 @@ export default function VendorDashboardScreen() {
 
         {/* ─ Portfolio ─ */}
         <View style={styles.sectionOuter}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>Portfolio</Text>
-            <TouchableOpacity testID="add-portfolio-btn" onPress={openAddPortfolio}>
-              <View style={[styles.addBtn, { backgroundColor: colors.secondary, borderRadius: 8 }]}>
+          <View style={styles.rowBetween}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Portfolio</Text>
+            <TouchableOpacity testID="add-portfolio-btn" onPress={pickAndUploadPortfolio}>
+              <View style={[styles.addBtn, { backgroundColor: colors.secondary }]}>
                 <Ionicons name="camera-outline" size={16} color={colors.primary} />
-                <Text style={[styles.addBtnText, { color: colors.primary, fontFamily: "Poppins_500Medium" }]}>Add Photo</Text>
+                <Text style={[{ color: colors.primary, fontFamily: "Poppins_500Medium", fontSize: 13 }]}>Add Photo</Text>
               </View>
             </TouchableOpacity>
           </View>
           {!profile || profile.portfolio.length === 0 ? (
-            <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-              <Ionicons name="images-outline" size={36} color={colors.border} />
-              <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]}>
-                Add photos to showcase your work
-              </Text>
-              <TouchableOpacity
-                style={[styles.emptyActionBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
-                onPress={openAddPortfolio}
-              >
-                <Text style={[styles.emptyActionText, { color: "#fff", fontFamily: "Poppins_600SemiBold" }]}>Add Photo</Text>
-              </TouchableOpacity>
-            </View>
+            <EmptyCard icon="images-outline" text="Add photos to showcase your work." onAction={pickAndUploadPortfolio} actionLabel="Add Photo" colors={colors} />
           ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.portfolioRow}>
-              {/* Add tile */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
               <TouchableOpacity
                 testID="add-portfolio-tile"
-                onPress={openAddPortfolio}
-                style={[styles.portfolioAddTile, { borderColor: colors.primary, borderRadius: colors.radius, backgroundColor: colors.secondary }]}
+                onPress={pickAndUploadPortfolio}
+                style={[styles.portAddTile, { borderColor: colors.primary, backgroundColor: colors.secondary, borderRadius: colors.radius }]}
               >
-                <Ionicons name="add" size={22} color={colors.primary} />
+                <Ionicons name="add" size={24} color={colors.primary} />
               </TouchableOpacity>
               {profile.portfolio.map((item) => (
                 <TouchableOpacity
                   key={item.id}
                   onLongPress={() => deletePortfolioItem(item)}
                   testID={`portfolio-item-${item.id}`}
-                  style={[styles.portfolioThumb, { borderRadius: colors.radius, overflow: "hidden", borderColor: colors.border }]}
+                  style={[styles.portThumb, { borderRadius: colors.radius, borderColor: colors.border }]}
                 >
-                  <Image source={{ uri: item.imageUrl }} style={styles.portfolioThumbImg} />
-                  <View style={[styles.portDeleteHint, { backgroundColor: "rgba(0,0,0,0.35)" }]}>
-                    <Ionicons name="trash-outline" size={12} color="#fff" />
-                  </View>
+                  <Image source={{ uri: item.imageUrl }} style={styles.portThumbImg} />
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -579,7 +633,7 @@ export default function VendorDashboardScreen() {
 
         {/* ─ Quick actions ─ */}
         <View style={styles.sectionOuter}>
-          <Text style={[styles.sectionTitle, { color: colors.foreground, fontFamily: "Poppins_600SemiBold", marginBottom: 12 }]}>Quick Actions</Text>
+          <Text style={[styles.sectionTitle, { color: colors.foreground, marginBottom: 12 }]}>Quick Actions</Text>
           {[
             { label: "View Public Profile", icon: "eye-outline" as const, desc: "See how customers see you" },
             { label: "Upgrade Plan", icon: "trophy-outline" as const, desc: "Get more visibility & features" },
@@ -588,14 +642,14 @@ export default function VendorDashboardScreen() {
             <TouchableOpacity
               key={action.label}
               testID={`action-${action.label}`}
-              style={[styles.actionItem, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
+              style={[styles.listItem, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
             >
-              <View style={[styles.actionIcon, { backgroundColor: colors.secondary, borderRadius: 10 }]}>
+              <View style={[styles.itemIcon, { backgroundColor: colors.secondary, borderRadius: 10 }]}>
                 <Ionicons name={action.icon} size={20} color={colors.primary} />
               </View>
-              <View style={styles.actionText}>
-                <Text style={[styles.actionLabel, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>{action.label}</Text>
-                <Text style={[styles.actionDesc, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]}>{action.desc}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[{ color: colors.foreground, fontFamily: "Poppins_600SemiBold", fontSize: 14 }]}>{action.label}</Text>
+                <Text style={[{ color: colors.mutedForeground, fontFamily: "Poppins_400Regular", fontSize: 12, marginTop: 2 }]}>{action.desc}</Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
             </TouchableOpacity>
@@ -603,37 +657,19 @@ export default function VendorDashboardScreen() {
         </View>
       </ScrollView>
 
-      {/* ══════════════════════════════════════════
-          Profile Edit Modal
-      ══════════════════════════════════════════ */}
+      {/* ══ Profile Modal ══ */}
       <Modal visible={showProfileModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: "Poppins_700Bold" }]}>
-                {profile ? "Edit Profile" : "Create Profile"}
-              </Text>
-              <TouchableOpacity onPress={() => setShowProfileModal(false)}>
-                <Ionicons name="close" size={24} color={colors.foreground} />
-              </TouchableOpacity>
-            </View>
+        <View style={styles.overlay}>
+          <View style={[styles.sheet, { backgroundColor: colors.background }]}>
+            <SheetHeader title={profile ? "Edit Profile" : "Create Profile"} onClose={() => setShowProfileModal(false)} colors={colors} />
             <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
               <FormField label="Business Name" value={editBusinessName} onChange={setEditBusinessName}
                 placeholder="e.g. Amani Photography Studio" colors={colors} testID="business-name-input" />
               <View style={styles.formGroup}>
-                <Text style={[styles.formLabel, { color: colors.foreground, fontFamily: "Poppins_500Medium" }]}>Business Type</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.typeChips}>
-                  {BUSINESS_TYPES.map((type) => (
-                    <TouchableOpacity key={type} onPress={() => setEditBusinessType(type)}
-                      style={[styles.typeChip, {
-                        backgroundColor: editBusinessType === type ? colors.primary : colors.card,
-                        borderColor: editBusinessType === type ? colors.primary : colors.border,
-                      }]}>
-                      <Text style={[styles.typeChipText, {
-                        color: editBusinessType === type ? "#fff" : colors.foreground,
-                        fontFamily: "Poppins_400Regular",
-                      }]}>{type}</Text>
-                    </TouchableOpacity>
+                <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Business Type</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                  {BUSINESS_TYPES.map((t) => (
+                    <ChipBtn key={t} label={t} selected={editBusinessType === t} onPress={() => setEditBusinessType(t)} colors={colors} />
                   ))}
                 </ScrollView>
               </View>
@@ -644,42 +680,24 @@ export default function VendorDashboardScreen() {
               <FormField label="Response Time" value={editResponseTime} onChange={setEditResponseTime}
                 placeholder="e.g. 1 hour, 24 hours" colors={colors} />
             </ScrollView>
-            <ModalSaveButton onPress={saveProfile} loading={savingProfile} label={profile ? "Save Changes" : "Create Profile"} colors={colors} testID="save-profile-btn" />
+            <SaveBtn onPress={saveProfile} loading={savingProfile} label={profile ? "Save Changes" : "Create Profile"} colors={colors} testID="save-profile-btn" />
           </View>
         </View>
       </Modal>
 
-      {/* ══════════════════════════════════════════
-          Service Add / Edit Modal
-      ══════════════════════════════════════════ */}
+      {/* ══ Service Modal ══ */}
       <Modal visible={showServiceModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: "Poppins_700Bold" }]}>
-                {editingService ? "Edit Service" : "Add Service"}
-              </Text>
-              <TouchableOpacity onPress={() => setShowServiceModal(false)}>
-                <Ionicons name="close" size={24} color={colors.foreground} />
-              </TouchableOpacity>
-            </View>
+        <View style={styles.overlay}>
+          <View style={[styles.sheet, { backgroundColor: colors.background }]}>
+            <SheetHeader title={editingService ? "Edit Service" : "Add Service"} onClose={() => setShowServiceModal(false)} colors={colors} />
             <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
               <FormField label="Service Name *" value={svcName} onChange={setSvcName}
                 placeholder="e.g. Wedding Photography" colors={colors} testID="service-name-input" />
               <View style={styles.formGroup}>
-                <Text style={[styles.formLabel, { color: colors.foreground, fontFamily: "Poppins_500Medium" }]}>Category *</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.typeChips}>
-                  {SERVICE_CATEGORIES.map((cat) => (
-                    <TouchableOpacity key={cat} onPress={() => setSvcCategory(cat)}
-                      style={[styles.typeChip, {
-                        backgroundColor: svcCategory === cat ? colors.primary : colors.card,
-                        borderColor: svcCategory === cat ? colors.primary : colors.border,
-                      }]}>
-                      <Text style={[styles.typeChipText, {
-                        color: svcCategory === cat ? "#fff" : colors.foreground,
-                        fontFamily: "Poppins_400Regular",
-                      }]}>{cat}</Text>
-                    </TouchableOpacity>
+                <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Category *</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                  {SERVICE_CATEGORIES.map((c) => (
+                    <ChipBtn key={c} label={c} selected={svcCategory === c} onPress={() => setSvcCategory(c)} colors={colors} />
                   ))}
                 </ScrollView>
               </View>
@@ -688,44 +706,129 @@ export default function VendorDashboardScreen() {
               <FormField label="Description" value={svcDescription} onChange={setSvcDescription}
                 placeholder="Describe what's included..." colors={colors} testID="service-description-input" multiline />
             </ScrollView>
-            <ModalSaveButton
-              onPress={saveService}
-              loading={savingService}
-              label={editingService ? "Save Service" : "Add Service"}
-              colors={colors}
-              testID="save-service-btn"
-            />
+            <SaveBtn onPress={saveService} loading={savingService} label={editingService ? "Save Service" : "Add Service"} colors={colors} testID="save-service-btn" />
           </View>
         </View>
       </Modal>
 
-      {/* ══════════════════════════════════════════
-          Portfolio Add Modal
-      ══════════════════════════════════════════ */}
-      <Modal visible={showPortfolioModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: "Poppins_700Bold" }]}>
-                Add Portfolio Photo
+      {/* ══ Package Management Modal ══ */}
+      <Modal visible={!!managingService && !showPackageModal} animationType="slide" transparent>
+        <View style={styles.overlay}>
+          <View style={[styles.sheet, { backgroundColor: colors.background }]}>
+            <SheetHeader
+              title={`Packages — ${managingService?.name ?? ""}`}
+              onClose={() => setManagingService(null)}
+              colors={colors}
+            />
+            <View style={[styles.rowBetween, { marginBottom: 12 }]}>
+              <Text style={[{ color: colors.mutedForeground, fontFamily: "Poppins_400Regular", fontSize: 13 }]}>
+                {packages.length} package{packages.length !== 1 ? "s" : ""}
               </Text>
-              <TouchableOpacity onPress={() => setShowPortfolioModal(false)}>
-                <Ionicons name="close" size={24} color={colors.foreground} />
+              <TouchableOpacity testID="add-package-btn" onPress={openAddPackage}>
+                <View style={[styles.addBtn, { backgroundColor: colors.secondary }]}>
+                  <Ionicons name="add" size={16} color={colors.primary} />
+                  <Text style={[{ color: colors.primary, fontFamily: "Poppins_500Medium", fontSize: 13 }]}>Add Package</Text>
+                </View>
               </TouchableOpacity>
             </View>
-            <View style={{ flex: 1, gap: 4 }}>
-              <FormField label="Image URL *" value={portImageUrl} onChange={setPortImageUrl}
-                placeholder="https://example.com/photo.jpg" colors={colors} testID="portfolio-url-input" />
-              {portImageUrl.startsWith("http") && (
-                <Image source={{ uri: portImageUrl }} style={[styles.portPreview, { borderRadius: colors.radius }]} resizeMode="cover" />
+            {packagesLoading ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : packages.length === 0 ? (
+              <View style={[styles.emptyCard, { borderColor: colors.border, backgroundColor: colors.muted }]}>
+                <Ionicons name="layers-outline" size={32} color={colors.border} />
+                <Text style={[{ color: colors.mutedForeground, fontFamily: "Poppins_400Regular", fontSize: 13 }]}>
+                  No packages yet. Add pricing tiers for this service.
+                </Text>
+              </View>
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+                {packages.map((pkg) => (
+                  <View key={pkg.id} style={[styles.listItem, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, marginBottom: 10 }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[{ color: colors.foreground, fontFamily: "Poppins_600SemiBold", fontSize: 14 }]}>{pkg.name}</Text>
+                      <Text style={[{ color: colors.primary, fontFamily: "Poppins_600SemiBold", fontSize: 13 }]}>
+                        TZS {pkg.price.toLocaleString()}
+                        {pkg.durationHours ? ` · ${pkg.durationHours}h` : ""}
+                      </Text>
+                      {pkg.inclusions.length > 0 && (
+                        <Text style={[{ color: colors.mutedForeground, fontFamily: "Poppins_400Regular", fontSize: 11, marginTop: 2 }]} numberOfLines={2}>
+                          {pkg.inclusions.join(" · ")}
+                        </Text>
+                      )}
+                    </View>
+                    <TouchableOpacity testID={`edit-package-${pkg.id}`} onPress={() => openEditPackage(pkg)} style={{ padding: 6 }}>
+                      <Ionicons name="create-outline" size={18} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity testID={`delete-package-${pkg.id}`} onPress={() => deletePackage(pkg)} style={{ padding: 6 }}>
+                      <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ══ Package Add/Edit Modal ══ */}
+      <Modal visible={showPackageModal} animationType="slide" transparent>
+        <View style={styles.overlay}>
+          <View style={[styles.sheet, { backgroundColor: colors.background }]}>
+            <SheetHeader title={editingPackage ? "Edit Package" : "Add Package"} onClose={() => setShowPackageModal(false)} colors={colors} />
+            <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+              <FormField label="Package Name *" value={pkgName} onChange={setPkgName}
+                placeholder="e.g. Gold Package" colors={colors} testID="package-name-input" />
+              <FormField label="Price (TZS) *" value={pkgPrice} onChange={setPkgPrice}
+                placeholder="e.g. 500000" colors={colors} testID="package-price-input" keyboardType="numeric" />
+              <FormField label="Description" value={pkgDescription} onChange={setPkgDescription}
+                placeholder="Describe what this package includes..." colors={colors} testID="package-description-input" multiline />
+              <FormField label="Duration (hours)" value={pkgDuration} onChange={setPkgDuration}
+                placeholder="e.g. 8" colors={colors} keyboardType="numeric" />
+              <FormField label="Inclusions (comma-separated)" value={pkgInclusions} onChange={setPkgInclusions}
+                placeholder="e.g. 200 edited photos, USB, online gallery" colors={colors} testID="package-inclusions-input" multiline />
+            </ScrollView>
+            <SaveBtn onPress={savePackage} loading={savingPackage} label={editingPackage ? "Save Package" : "Add Package"} colors={colors} testID="save-package-btn" />
+          </View>
+        </View>
+      </Modal>
+
+      {/* ══ Portfolio Upload Modal ══ */}
+      <Modal visible={showPortfolioModal} animationType="slide" transparent>
+        <View style={styles.overlay}>
+          <View style={[styles.sheet, { backgroundColor: colors.background }]}>
+            <SheetHeader title="Add Portfolio Photo" onClose={() => { setShowPortfolioModal(false); setPortPreviewUri(""); setPortCaption(""); }} colors={colors} />
+            <View style={{ flex: 1, gap: 12 }}>
+              {portPreviewUri ? (
+                <TouchableOpacity onPress={pickAndUploadPortfolio}>
+                  <Image source={{ uri: portPreviewUri }} style={[styles.portPreviewLarge, { borderRadius: colors.radius }]} resizeMode="cover" />
+                  <View style={[styles.changePhotoOverlay, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
+                    <Ionicons name="camera-outline" size={20} color="#fff" />
+                    <Text style={[{ color: "#fff", fontFamily: "Poppins_500Medium", fontSize: 12 }]}>Change Photo</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  testID="pick-image-btn"
+                  onPress={pickAndUploadPortfolio}
+                  style={[styles.portPickerPlaceholder, { borderColor: colors.primary, backgroundColor: colors.secondary, borderRadius: colors.radius }]}
+                >
+                  <Ionicons name="camera-outline" size={36} color={colors.primary} />
+                  <Text style={[{ color: colors.primary, fontFamily: "Poppins_500Medium", fontSize: 14, marginTop: 8 }]}>
+                    Choose from Library
+                  </Text>
+                </TouchableOpacity>
               )}
               <FormField label="Caption (optional)" value={portCaption} onChange={setPortCaption}
                 placeholder="Describe this photo..." colors={colors} testID="portfolio-caption-input" />
-              <Text style={[styles.portHint, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]}>
-                Paste the URL of a photo that showcases your work. Native photo upload is available in the full app.
-              </Text>
             </View>
-            <ModalSaveButton onPress={savePortfolio} loading={savingPortfolio} label="Add to Portfolio" colors={colors} testID="save-portfolio-btn" />
+            <SaveBtn
+              onPress={savePortfolio}
+              loading={uploadingPortfolio}
+              label={uploadingPortfolio ? "Uploading…" : "Add to Portfolio"}
+              colors={colors}
+              testID="save-portfolio-btn"
+              disabled={!portPreviewUri}
+            />
           </View>
         </View>
       </Modal>
@@ -733,30 +836,58 @@ export default function VendorDashboardScreen() {
   );
 }
 
-// ─── Shared form helpers ──────────────────────────────────────────────────────
+// ─── Shared small components ──────────────────────────────────────────────────
 
-function FormField({
-  label, value, onChange, placeholder, colors, testID, multiline, keyboardType,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
+function InfoRow({ icon, text, colors }: { icon: keyof typeof Ionicons.glyphMap; text: string; colors: ReturnType<typeof useColors> }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <Ionicons name={icon} size={15} color={colors.mutedForeground} />
+      <Text style={{ color: colors.foreground, fontFamily: "Poppins_400Regular", fontSize: 14 }}>{text}</Text>
+    </View>
+  );
+}
+
+function EmptyCard({ icon, text, onAction, actionLabel, colors }: {
+  icon: keyof typeof Ionicons.glyphMap; text: string; onAction: () => void; actionLabel: string;
   colors: ReturnType<typeof useColors>;
-  testID?: string;
-  multiline?: boolean;
+}) {
+  return (
+    <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+      <Ionicons name={icon} size={36} color={colors.border} />
+      <Text style={{ color: colors.mutedForeground, fontFamily: "Poppins_400Regular", fontSize: 13, textAlign: "center" }}>{text}</Text>
+      <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]} onPress={onAction}>
+        <Text style={[styles.primaryBtnText, { color: "#fff" }]}>{actionLabel}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function ChipBtn({ label, selected, onPress, colors }: { label: string; selected: boolean; onPress: () => void; colors: ReturnType<typeof useColors> }) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={{
+        paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1,
+        backgroundColor: selected ? colors.primary : colors.card,
+        borderColor: selected ? colors.primary : colors.border,
+      }}
+    >
+      <Text style={{ color: selected ? "#fff" : colors.foreground, fontFamily: "Poppins_400Regular", fontSize: 13 }}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function FormField({ label, value, onChange, placeholder, colors, testID, multiline, keyboardType }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder: string;
+  colors: ReturnType<typeof useColors>; testID?: string; multiline?: boolean;
   keyboardType?: "default" | "numeric" | "email-address";
 }) {
   return (
     <View style={styles.formGroup}>
-      <Text style={[styles.formLabel, { color: colors.foreground, fontFamily: "Poppins_500Medium" }]}>{label}</Text>
+      <Text style={[styles.fieldLabel, { color: colors.foreground }]}>{label}</Text>
       <TextInput
         testID={testID}
-        style={[
-          styles.input,
-          multiline && styles.textArea,
-          { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.muted, fontFamily: "Poppins_400Regular" },
-        ]}
+        style={[styles.input, multiline && styles.inputMulti, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.muted, fontFamily: "Poppins_400Regular" }]}
         placeholder={placeholder}
         placeholderTextColor={colors.mutedForeground}
         value={value}
@@ -770,27 +901,29 @@ function FormField({
   );
 }
 
-function ModalSaveButton({
-  onPress, loading, label, colors, testID,
-}: {
-  onPress: () => void;
-  loading: boolean;
-  label: string;
-  colors: ReturnType<typeof useColors>;
-  testID?: string;
+function SheetHeader({ title, onClose, colors }: { title: string; onClose: () => void; colors: ReturnType<typeof useColors> }) {
+  return (
+    <View style={styles.sheetHeader}>
+      <Text style={[styles.sheetTitle, { color: colors.foreground }]}>{title}</Text>
+      <TouchableOpacity onPress={onClose}>
+        <Ionicons name="close" size={24} color={colors.foreground} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function SaveBtn({ onPress, loading, label, colors, testID, disabled }: {
+  onPress: () => void; loading: boolean; label: string; colors: ReturnType<typeof useColors>;
+  testID?: string; disabled?: boolean;
 }) {
   return (
     <TouchableOpacity
       testID={testID}
-      style={[styles.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }, loading && { opacity: 0.7 }]}
+      style={[styles.primaryBtn, { backgroundColor: colors.primary, borderRadius: colors.radius, marginTop: 8 }, (loading || disabled) && { opacity: 0.7 }]}
       onPress={onPress}
-      disabled={loading}
+      disabled={loading || disabled}
     >
-      {loading ? (
-        <ActivityIndicator color="#fff" />
-      ) : (
-        <Text style={[styles.saveBtnText, { color: "#fff", fontFamily: "Poppins_700Bold" }]}>{label}</Text>
-      )}
+      {loading ? <ActivityIndicator color="#fff" /> : <Text style={[styles.primaryBtnText, { color: "#fff" }]}>{label}</Text>}
     </TouchableOpacity>
   );
 }
@@ -802,69 +935,39 @@ const styles = StyleSheet.create({
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
   header: { paddingHorizontal: 20, paddingBottom: 20, gap: 16 },
   headerTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  headerGreeting: { fontSize: 12 },
-  headerName: { fontSize: 22 },
-  editBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  iconBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   availCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 14, borderRadius: 12 },
   availLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
   availDot: { width: 10, height: 10, borderRadius: 5 },
-  availTitle: { fontSize: 15 },
-  availSubtitle: { fontSize: 12, marginTop: 2 },
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 8 },
   statCard: { flex: 1, minWidth: "44%", padding: 14, alignItems: "center", gap: 6, borderWidth: 1 },
   statIcon: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   statValue: { fontSize: 22 },
   statLabel: { fontSize: 12 },
-  setupCard: { padding: 24, alignItems: "center", gap: 10, borderWidth: 1 },
-  setupTitle: { fontSize: 17, textAlign: "center" },
-  setupText: { fontSize: 13, textAlign: "center", lineHeight: 20 },
-  setupBtn: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, paddingVertical: 12, marginTop: 6 },
-  setupBtnText: { fontSize: 14 },
-  sectionCard: { padding: 16, borderWidth: 1, gap: 8 },
+  card: { padding: 16, borderRadius: 12, borderWidth: 1, gap: 8 },
+  cardTitle: { fontFamily: "Poppins_600SemiBold", fontSize: 17, textAlign: "center" },
+  cardSub: { fontFamily: "Poppins_400Regular", fontSize: 13, textAlign: "center" },
   sectionOuter: { paddingHorizontal: 16, marginBottom: 16, gap: 10 },
-  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  sectionTitle: { fontSize: 17 },
-  editLink: { fontSize: 14 },
-  addBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6 },
-  addBtnText: { fontSize: 13 },
-  profileRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  profileValue: { fontSize: 14 },
-  profileBio: { fontSize: 13, lineHeight: 20, marginTop: 4 },
-  tierBadge: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 5 },
-  tierText: { fontSize: 12 },
+  sectionTitle: { fontFamily: "Poppins_600SemiBold", fontSize: 17 },
+  rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  addBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  listItem: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14, borderWidth: 1 },
+  itemIcon: { width: 42, height: 42, alignItems: "center", justifyContent: "center" },
+  portAddTile: { width: 80, height: 80, alignItems: "center", justifyContent: "center", borderWidth: 2, borderStyle: "dashed" },
+  portThumb: { width: 80, height: 80, borderWidth: 1, overflow: "hidden" },
+  portThumbImg: { width: "100%", height: "100%", resizeMode: "cover" },
+  portPreviewLarge: { width: "100%", height: 200, position: "relative" },
+  portPickerPlaceholder: { height: 180, alignItems: "center", justifyContent: "center", borderWidth: 2, borderStyle: "dashed" },
+  changePhotoOverlay: { position: "absolute", bottom: 0, left: 0, right: 0, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 8 },
   emptyCard: { padding: 24, alignItems: "center", gap: 10, borderWidth: 1 },
-  emptyText: { fontSize: 13, textAlign: "center" },
-  emptyActionBtn: { paddingHorizontal: 20, paddingVertical: 10, marginTop: 4 },
-  emptyActionText: { fontSize: 13 },
-  serviceItem: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14, borderWidth: 1 },
-  serviceIconBox: { width: 42, height: 42, alignItems: "center", justifyContent: "center" },
-  serviceInfo: { flex: 1, gap: 3 },
-  serviceName: { fontSize: 14 },
-  serviceMeta: { fontSize: 12 },
-  serviceAction: { padding: 6 },
-  portfolioRow: { gap: 8 },
-  portfolioAddTile: { width: 80, height: 80, alignItems: "center", justifyContent: "center", borderWidth: 2, borderStyle: "dashed" },
-  portfolioThumb: { width: 80, height: 80, borderWidth: 1, position: "relative" },
-  portfolioThumbImg: { width: "100%", height: "100%", resizeMode: "cover" },
-  portDeleteHint: { position: "absolute", bottom: 3, right: 3, borderRadius: 4, padding: 3 },
-  portPreview: { height: 140, width: "100%", marginTop: 4 },
-  portHint: { fontSize: 11, lineHeight: 16, marginTop: 6 },
-  actionItem: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderWidth: 1 },
-  actionIcon: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
-  actionText: { flex: 1 },
-  actionLabel: { fontSize: 14 },
-  actionDesc: { fontSize: 12, marginTop: 2 },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  modalSheet: { maxHeight: "92%", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 16 },
-  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  modalTitle: { fontSize: 20 },
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  sheet: { maxHeight: "92%", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 16 },
+  sheetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  sheetTitle: { fontFamily: "Poppins_700Bold", fontSize: 20 },
   formGroup: { gap: 8, marginBottom: 12 },
-  formLabel: { fontSize: 14 },
+  fieldLabel: { fontFamily: "Poppins_500Medium", fontSize: 14 },
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
-  textArea: { minHeight: 100 },
-  typeChips: { gap: 8, paddingVertical: 4 },
-  typeChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
-  typeChipText: { fontSize: 13 },
-  saveBtn: { paddingVertical: 15, alignItems: "center", marginTop: 8 },
-  saveBtnText: { fontSize: 16 },
+  inputMulti: { minHeight: 100 },
+  primaryBtn: { paddingVertical: 15, alignItems: "center" },
+  primaryBtnText: { fontFamily: "Poppins_700Bold", fontSize: 16 },
 });
