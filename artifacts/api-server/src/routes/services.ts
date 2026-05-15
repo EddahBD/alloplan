@@ -74,7 +74,7 @@ router.patch("/:id", requireAccessToken, async (req, res) => {
     const updateFields: Partial<typeof servicesTable.$inferInsert> = {};
     if (name !== undefined) updateFields.name = name;
     if (description !== undefined) updateFields.description = description;
-    if (category !== undefined) updateFields.category = category;
+    if (category !== undefined) updateFields.category = String(category).toLowerCase();
     if (basePrice !== undefined) updateFields.basePrice = String(basePrice);
     if (images !== undefined) updateFields.images = JSON.stringify(images);
     if (isActive !== undefined) updateFields.isActive = isActive;

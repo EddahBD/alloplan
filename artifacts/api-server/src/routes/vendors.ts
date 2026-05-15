@@ -433,13 +433,16 @@ router.post("/:id/services", requireAccessToken, async (req, res) => {
       return;
     }
 
+    // Normalize category to lowercase canonical form matching marketplace filters
+    const normalizedCategory = String(category).toLowerCase();
+
     const [service] = await db
       .insert(servicesTable)
       .values({
         vendorId,
         name,
         description,
-        category,
+        category: normalizedCategory,
         basePrice: String(basePrice),
         images: JSON.stringify(images),
       })

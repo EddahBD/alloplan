@@ -75,9 +75,20 @@ const BUSINESS_TYPES = [
   "Makeup Artist", "MC / Emcee", "Florist", "Event Planning", "Other",
 ];
 
-const SERVICE_CATEGORIES = [
-  "Photography", "Decoration", "Catering", "Music & DJ", "Venue Hire",
-  "Transport", "Makeup & Beauty", "MC & Hosting", "Flowers", "Planning", "Other",
+// Canonical category values must match the marketplace filter IDs exactly.
+// value = stored in DB / sent to API (lowercase); label = display text.
+const SERVICE_CATEGORIES: { value: string; label: string }[] = [
+  { value: "photography", label: "Photography" },
+  { value: "decoration", label: "Decoration" },
+  { value: "catering", label: "Catering" },
+  { value: "music", label: "Music & DJ" },
+  { value: "venue", label: "Venue Hire" },
+  { value: "transport", label: "Transport" },
+  { value: "makeup", label: "Makeup & Beauty" },
+  { value: "mc", label: "MC & Hosting" },
+  { value: "florist", label: "Flowers / Florist" },
+  { value: "planning", label: "Event Planning" },
+  { value: "other", label: "Other" },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -696,7 +707,7 @@ export default function VendorDashboardScreen() {
                 <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Category *</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
                   {SERVICE_CATEGORIES.map((c) => (
-                    <ChipBtn key={c} label={c} selected={svcCategory === c} onPress={() => setSvcCategory(c)} colors={colors} />
+                    <ChipBtn key={c.value} label={c.label} selected={svcCategory === c.value} onPress={() => setSvcCategory(c.value)} colors={colors} />
                   ))}
                 </ScrollView>
               </View>
