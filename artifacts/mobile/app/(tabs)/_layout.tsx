@@ -20,9 +20,9 @@ function NativeTabLayout() {
         <Icon sf={{ default: "storefront", selected: "storefront.fill" }} />
         <Label>Marketplace</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="planner">
-        <Icon sf={{ default: "calendar", selected: "calendar.fill" }} />
-        <Label>Planner</Label>
+      <NativeTabs.Trigger name="wallet">
+        <Icon sf={{ default: "wallet.bifold", selected: "wallet.bifold.fill" }} />
+        <Label>Wallet</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="bookings">
         <Icon sf={{ default: "bookmark", selected: "bookmark.fill" }} />
@@ -119,19 +119,19 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="planner"
+        name="wallet"
         options={{
-          title: "Planner",
+          title: "Wallet",
           tabBarIcon: ({ color, focused }) =>
             isIOS ? (
               <SymbolView
-                name={focused ? "calendar.fill" : "calendar"}
+                name={focused ? "wallet.bifold.fill" : "wallet.bifold"}
                 tintColor={color}
                 size={24}
               />
             ) : (
               <Ionicons
-                name={focused ? "calendar" : "calendar-outline"}
+                name={focused ? "wallet" : "wallet-outline"}
                 size={22}
                 color={color}
               />

@@ -1,10 +1,12 @@
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET =
-  process.env["SESSION_SECRET"] ||
-  process.env["JWT_SECRET"] ||
-  "alloplan-jwt-secret-change-in-prod";
+const JWT_SECRET = process.env["SESSION_SECRET"] ?? process.env["JWT_SECRET"];
+if (!JWT_SECRET) {
+  throw new Error(
+    "JWT secret is not set. Set SESSION_SECRET or JWT_SECRET environment variable."
+  );
+}
 
 export interface AuthPayload {
   userId: number;
@@ -21,15 +23,20 @@ declare global {
 }
 
 export function signToken(payload: AuthPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
+  return jwt.sign(payload, JWT_SECRET!, { expiresIn: "7d" });
 }
 
 export function signRefreshToken(payload: AuthPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "30d" });
+  return jwt.sign({ ...payload, tokenType: "refresh" }, JWT_SECRET!, {
+    expiresIn: "30d",
+  });
 }
 
 export function verifyToken(token: string): AuthPayload {
-  return jwt.verify(token, JWT_SECRET) as AuthPayload;
+  const decoded = jwt.verify(token, JWT_SECRET!) as AuthPayload & {
+    tokenType?: string;
+  };
+  return decoded;
 }
 
 export function requireAuth(

@@ -43,8 +43,10 @@ export default function LoginScreen() {
     try {
       await login(email.trim(), password);
       router.replace("/(tabs)");
-    } catch (err: any) {
-      Alert.alert("Login Failed", err.message || "Please check your credentials");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Please check your credentials";
+      Alert.alert("Login Failed", message);
     } finally {
       setLoading(false);
     }

@@ -210,8 +210,63 @@ router.post("/refresh", async (req, res) => {
 
 // POST /api/auth/forgot-password
 router.post("/forgot-password", async (req, res) => {
-  // In production this would send an email - stub for now
+  // In production this sends a reset email — stub for now
   res.json({ message: "If an account exists with that email, a reset link has been sent." });
+});
+
+// POST /api/auth/reset-password
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) {
+      res.status(400).json({ error: "Validation", message: "token and password are required" });
+      return;
+    }
+    if (password.length < 6) {
+      res.status(400).json({ error: "Validation", message: "Password must be at least 6 characters" });
+      return;
+    }
+
+    let payload: { userId: number };
+    try {
+      payload = verifyToken(token) as { userId: number };
+    } catch {
+      res.status(400).json({ error: "InvalidToken", message: "Invalid or expired reset token" });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    await db
+      .update(usersTable)
+      .set({ passwordHash, updatedAt: new Date() })
+      .where(eq(usersTable.id, payload.userId));
+
+    res.json({ message: "Password reset successfully. Please log in with your new password." });
+  } catch (err) {
+    console.error("Reset password error:", err);
+    res.status(500).json({ error: "Server", message: "Internal server error" });
+  }
+});
+
+// POST /api/auth/push-token
+router.post("/push-token", requireAuth, async (req, res) => {
+  try {
+    const { pushToken } = req.body;
+    if (!pushToken || typeof pushToken !== "string") {
+      res.status(400).json({ error: "Validation", message: "pushToken is required" });
+      return;
+    }
+
+    await db
+      .update(usersTable)
+      .set({ pushToken, updatedAt: new Date() })
+      .where(eq(usersTable.id, req.user!.userId));
+
+    res.json({ message: "Push token registered" });
+  } catch (err) {
+    console.error("Push token error:", err);
+    res.status(500).json({ error: "Server", message: "Internal server error" });
+  }
 });
 
 export default router;

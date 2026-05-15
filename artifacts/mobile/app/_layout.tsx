@@ -15,7 +15,8 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { setBaseUrl } from "@workspace/api-client-react";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { AuthProvider } from "@/context/AuthContext";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 // Set API base URL
 setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN}`);
@@ -29,13 +30,24 @@ const queryClient = new QueryClient({
   },
 });
 
+const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN}`;
+
+function PushNotificationRegistrar() {
+  const { token } = useAuth();
+  usePushNotifications(token, BASE_URL);
+  return null;
+}
+
 function RootLayoutNav() {
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" />
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(tabs)" />
-    </Stack>
+    <>
+      <PushNotificationRegistrar />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(tabs)" />
+      </Stack>
+    </>
   );
 }
 

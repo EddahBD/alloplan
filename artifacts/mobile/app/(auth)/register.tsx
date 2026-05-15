@@ -55,8 +55,9 @@ export default function RegisterScreen() {
         referralCode: referralCode.trim() || undefined,
       });
       router.replace("/(tabs)");
-    } catch (err: any) {
-      Alert.alert("Registration Failed", err.message || "Please try again");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Please try again";
+      Alert.alert("Registration Failed", message);
     } finally {
       setLoading(false);
     }

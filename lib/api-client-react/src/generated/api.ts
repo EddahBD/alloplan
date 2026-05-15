@@ -22,6 +22,10 @@ import type {
 import type {
   AuthForgotPassword200,
   AuthForgotPasswordBody,
+  AuthRegisterPushToken200,
+  AuthRegisterPushTokenBody,
+  AuthResetPassword200,
+  AuthResetPasswordBody,
   AuthResponse,
   ErrorResponse,
   HealthStatus,
@@ -481,5 +485,147 @@ export const useAuthForgotPassword = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getAuthForgotPasswordMutationOptions(options));
+    }
+
+export const getAuthResetPasswordUrl = () => {
+
+
+
+
+  return `/api/auth/reset-password`
+}
+
+/**
+ * @summary Reset password using token
+ */
+export const authResetPassword = async (authResetPasswordBody: AuthResetPasswordBody, options?: RequestInit): Promise<AuthResetPassword200> => {
+
+  return customFetch<AuthResetPassword200>(getAuthResetPasswordUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      authResetPasswordBody,)
+  }
+);}
+
+
+
+
+export const getAuthResetPasswordMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authResetPassword>>, TError,{data: BodyType<AuthResetPasswordBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof authResetPassword>>, TError,{data: BodyType<AuthResetPasswordBody>}, TContext> => {
+
+const mutationKey = ['authResetPassword'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authResetPassword>>, {data: BodyType<AuthResetPasswordBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  authResetPassword(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthResetPasswordMutationResult = NonNullable<Awaited<ReturnType<typeof authResetPassword>>>
+    export type AuthResetPasswordMutationBody = BodyType<AuthResetPasswordBody>
+    export type AuthResetPasswordMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Reset password using token
+ */
+export const useAuthResetPassword = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authResetPassword>>, TError,{data: BodyType<AuthResetPasswordBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof authResetPassword>>,
+        TError,
+        {data: BodyType<AuthResetPasswordBody>},
+        TContext
+      > => {
+      return useMutation(getAuthResetPasswordMutationOptions(options));
+    }
+
+export const getAuthRegisterPushTokenUrl = () => {
+
+
+
+
+  return `/api/auth/push-token`
+}
+
+/**
+ * @summary Register device push token
+ */
+export const authRegisterPushToken = async (authRegisterPushTokenBody: AuthRegisterPushTokenBody, options?: RequestInit): Promise<AuthRegisterPushToken200> => {
+
+  return customFetch<AuthRegisterPushToken200>(getAuthRegisterPushTokenUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      authRegisterPushTokenBody,)
+  }
+);}
+
+
+
+
+export const getAuthRegisterPushTokenMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authRegisterPushToken>>, TError,{data: BodyType<AuthRegisterPushTokenBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof authRegisterPushToken>>, TError,{data: BodyType<AuthRegisterPushTokenBody>}, TContext> => {
+
+const mutationKey = ['authRegisterPushToken'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authRegisterPushToken>>, {data: BodyType<AuthRegisterPushTokenBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  authRegisterPushToken(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthRegisterPushTokenMutationResult = NonNullable<Awaited<ReturnType<typeof authRegisterPushToken>>>
+    export type AuthRegisterPushTokenMutationBody = BodyType<AuthRegisterPushTokenBody>
+    export type AuthRegisterPushTokenMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Register device push token
+ */
+export const useAuthRegisterPushToken = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authRegisterPushToken>>, TError,{data: BodyType<AuthRegisterPushTokenBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof authRegisterPushToken>>,
+        TError,
+        {data: BodyType<AuthRegisterPushTokenBody>},
+        TContext
+      > => {
+      return useMutation(getAuthRegisterPushTokenMutationOptions(options));
     }
 

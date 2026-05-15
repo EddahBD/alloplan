@@ -80,3 +80,21 @@ export type AuthForgotPassword200 = {
   message: string;
 };
 
+export type AuthResetPasswordBody = {
+  token: string;
+  /** @minLength 6 */
+  password: string;
+};
+
+export type AuthResetPassword200 = {
+  message: string;
+};
+
+export type AuthRegisterPushTokenBody = {
+  pushToken: string;
+};
+
+export type AuthRegisterPushToken200 = {
+  message: string;
+};
+

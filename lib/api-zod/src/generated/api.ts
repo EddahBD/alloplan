@@ -98,3 +98,32 @@ export const AuthForgotPasswordResponse = zod.object({
 })
 
 
+/**
+ * @summary Reset password using token
+ */
+export const authResetPasswordBodyPasswordMin = 6;
+
+
+
+export const AuthResetPasswordBody = zod.object({
+  "token": zod.string(),
+  "password": zod.string().min(authResetPasswordBodyPasswordMin)
+})
+
+export const AuthResetPasswordResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
+ * @summary Register device push token
+ */
+export const AuthRegisterPushTokenBody = zod.object({
+  "pushToken": zod.string()
+})
+
+export const AuthRegisterPushTokenResponse = zod.object({
+  "message": zod.string()
+})
+
+
