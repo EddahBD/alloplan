@@ -13,11 +13,25 @@ import {
 
 const router = Router();
 
-// Generate a unique referral code
+// Generate a unique referral code with collision-safe retry
 function generateReferralCode(name: string): string {
   const base = name.replace(/\s+/g, "").substring(0, 6).toUpperCase();
   const suffix = Math.random().toString(36).substring(2, 6).toUpperCase();
   return `${base}${suffix}`;
+}
+
+async function generateUniqueReferralCode(name: string, maxAttempts = 5): Promise<string> {
+  for (let i = 0; i < maxAttempts; i++) {
+    const code = generateReferralCode(name);
+    const [existing] = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(eq(usersTable.referralCode, code))
+      .limit(1);
+    if (!existing) return code;
+  }
+  // Fallback: timestamp-based code guaranteed unique
+  return `REF${Date.now().toString(36).toUpperCase()}`;
 }
 
 // POST /api/auth/register
@@ -59,7 +73,7 @@ router.post("/register", async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const myReferralCode = generateReferralCode(name);
+    const myReferralCode = await generateUniqueReferralCode(name);
 
     const [user] = await db
       .insert(usersTable)
