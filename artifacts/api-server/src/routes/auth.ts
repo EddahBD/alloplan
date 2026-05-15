@@ -8,7 +8,7 @@ import {
   signRefreshToken,
   signResetToken,
   verifyToken,
-  requireAuth,
+  requireAccessToken,
 } from "../middlewares/auth";
 
 const router = Router();
@@ -68,9 +68,7 @@ router.post("/register", async (req, res) => {
         email: email.toLowerCase().trim(),
         passwordHash,
         phone: phone?.trim(),
-        role: (["customer", "vendor", "admin"] as const).includes(role)
-          ? (role as "customer" | "vendor" | "admin")
-          : "customer",
+        role: role === "vendor" ? "vendor" : "customer",
         referralCode: myReferralCode,
         referredBy: referredById,
       })
@@ -163,7 +161,7 @@ router.post("/login", async (req, res) => {
 });
 
 // GET /api/auth/me
-router.get("/me", requireAuth, async (req, res) => {
+router.get("/me", requireAccessToken, async (req, res) => {
   try {
     const [user] = await db
       .select()
@@ -239,10 +237,10 @@ router.post("/forgot-password", async (req, res) => {
 
     // Always return success to avoid email enumeration
     if (user) {
-      // In production: email the reset link; here we just generate the token
+      // Generate a short-lived, purpose-scoped reset token
       const _resetToken = signResetToken({ userId: user.id, email: user.email });
-      // TODO: send _resetToken via email service (e.g. SendGrid / Mailgun)
-      console.info(`[dev] reset token for ${user.email}: ${_resetToken}`);
+      // TODO: deliver _resetToken via email service (e.g. SendGrid / Mailgun)
+      // Do NOT log the token — it is a credential-equivalent secret
     }
     res.json({ message: "If an account exists with that email, a reset link has been sent." });
   } catch (err) {
@@ -291,7 +289,7 @@ router.post("/reset-password", async (req, res) => {
 });
 
 // POST /api/auth/push-token
-router.post("/push-token", requireAuth, async (req, res) => {
+router.post("/push-token", requireAccessToken, async (req, res) => {
   try {
     const { pushToken } = req.body;
     if (!pushToken || typeof pushToken !== "string") {

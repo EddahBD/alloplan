@@ -18,33 +18,20 @@ export default function RoleSelectionScreen() {
   const insets = useSafeAreaInsets();
   const { selectedRole, setSelectedRole } = useAuth();
 
-  const roles: Array<{
-    id: "customer" | "vendor" | "admin";
-    icon: React.ComponentProps<typeof Ionicons>["name"];
-    title: string;
-    subtitle: string;
-    badge: string;
-  }> = [
+  const roles = [
     {
-      id: "customer",
-      icon: "people",
+      id: "customer" as const,
+      icon: "people" as const,
       title: "I'm Planning an Event",
       subtitle: "Find vendors, book services, and plan the perfect event with AI assistance",
       badge: "Customer",
     },
     {
-      id: "vendor",
-      icon: "briefcase",
+      id: "vendor" as const,
+      icon: "briefcase" as const,
       title: "I'm a Service Provider",
       subtitle: "List your services, receive bookings, and grow your event business",
       badge: "Vendor",
-    },
-    {
-      id: "admin",
-      icon: "shield-checkmark",
-      title: "Platform Administrator",
-      subtitle: "Manage users, vendors, payments, and platform-wide settings",
-      badge: "Admin",
     },
   ];
 

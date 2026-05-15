@@ -38,11 +38,33 @@ export function signResetToken(payload: Pick<AuthPayload, "userId" | "email">): 
   });
 }
 
-export function verifyToken(token: string): AuthPayload {
-  const decoded = jwt.verify(token, JWT_SECRET!) as AuthPayload & {
-    tokenType?: string;
-  };
-  return decoded;
+export function verifyToken(token: string): AuthPayload & { tokenType?: string } {
+  return jwt.verify(token, JWT_SECRET!) as AuthPayload & { tokenType?: string };
+}
+
+export function requireAccessToken(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      res.status(401).json({ error: "Unauthorized", message: "Missing access token" });
+      return;
+    }
+    const token = authHeader.slice(7);
+    const payload = verifyToken(token);
+    // Reject non-access tokens (refresh/reset carry an explicit tokenType)
+    if (payload.tokenType && payload.tokenType !== "access") {
+      res.status(401).json({ error: "Unauthorized", message: "Invalid token type" });
+      return;
+    }
+    req.user = payload;
+    next();
+  } catch {
+    res.status(401).json({ error: "Unauthorized", message: "Invalid or expired token" });
+  }
 }
 
 export function requireAuth(

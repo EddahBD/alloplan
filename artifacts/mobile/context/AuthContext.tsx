@@ -26,8 +26,8 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  selectedRole: "customer" | "vendor" | "admin";
-  setSelectedRole: (role: "customer" | "vendor" | "admin") => void;
+  selectedRole: "customer" | "vendor";
+  setSelectedRole: (role: "customer" | "vendor") => void;
   login: (email: string, password: string) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
   logout: () => Promise<void>;
@@ -40,7 +40,7 @@ export interface RegisterData {
   email: string;
   password: string;
   phone?: string;
-  role: "customer" | "vendor" | "admin";
+  role: "customer" | "vendor";
   referralCode?: string;
 }
 
@@ -76,7 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedRole, setSelectedRole] = useState<"customer" | "vendor" | "admin">("customer");
+  const [selectedRole, setSelectedRole] = useState<"customer" | "vendor">("customer");
   const [hasOnboarded, setHasOnboarded] = useState(false);
 
   // Set up token getter for API client
