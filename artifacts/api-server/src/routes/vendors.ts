@@ -117,6 +117,11 @@ router.get("/", async (req, res) => {
           )
         );
       vendorIdsFromPrice = priceRows.map((r) => r.vendorId);
+      // No vendors satisfy the price criteria → return empty immediately
+      if (vendorIdsFromPrice.length === 0) {
+        res.json({ vendors: [], total: 0, page: pageNum, limit: limitNum, hasMore: false });
+        return;
+      }
     }
 
     // Text search
