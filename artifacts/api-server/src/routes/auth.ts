@@ -1,0 +1,217 @@
+import { Router } from "express";
+import bcrypt from "bcryptjs";
+import { db } from "@workspace/db";
+import { usersTable, walletAccountsTable, referralCodesTable } from "@workspace/db/schema";
+import { eq } from "drizzle-orm";
+import {
+  signToken,
+  signRefreshToken,
+  verifyToken,
+  requireAuth,
+} from "../middlewares/auth";
+
+const router = Router();
+
+// Generate a unique referral code
+function generateReferralCode(name: string): string {
+  const base = name.replace(/\s+/g, "").substring(0, 6).toUpperCase();
+  const suffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `${base}${suffix}`;
+}
+
+// POST /api/auth/register
+router.post("/register", async (req, res) => {
+  try {
+    const { name, email, password, phone, role = "customer", referralCode } = req.body;
+
+    if (!name || !email || !password) {
+      res.status(400).json({ error: "Validation", message: "Name, email and password are required" });
+      return;
+    }
+
+    if (password.length < 6) {
+      res.status(400).json({ error: "Validation", message: "Password must be at least 6 characters" });
+      return;
+    }
+
+    // Check if email already exists
+    const [existing] = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(eq(usersTable.email, email.toLowerCase().trim()))
+      .limit(1);
+
+    if (existing) {
+      res.status(409).json({ error: "Conflict", message: "Email already registered" });
+      return;
+    }
+
+    // Resolve referral
+    let referredById: number | undefined;
+    if (referralCode) {
+      const [referrer] = await db
+        .select({ id: usersTable.id })
+        .from(usersTable)
+        .where(eq(usersTable.referralCode, referralCode.toUpperCase()))
+        .limit(1);
+      if (referrer) referredById = referrer.id;
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const myReferralCode = generateReferralCode(name);
+
+    const [user] = await db
+      .insert(usersTable)
+      .values({
+        name: name.trim(),
+        email: email.toLowerCase().trim(),
+        passwordHash,
+        phone: phone?.trim(),
+        role: role === "vendor" ? "vendor" : "customer",
+        referralCode: myReferralCode,
+        referredBy: referredById,
+      })
+      .returning();
+
+    if (!user) {
+      res.status(500).json({ error: "Server", message: "Failed to create user" });
+      return;
+    }
+
+    // Create wallet account
+    await db.insert(walletAccountsTable).values({ userId: user.id });
+
+    // Create referral code record
+    await db.insert(referralCodesTable).values({ userId: user.id, code: myReferralCode });
+
+    const tokenPayload = { userId: user.id, email: user.email, role: user.role as "customer" | "vendor" | "admin" };
+    const token = signToken(tokenPayload);
+    const refreshToken = signRefreshToken(tokenPayload);
+
+    res.status(201).json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        phone: user.phone ?? null,
+        role: user.role,
+        profileImage: user.profileImage ?? null,
+        referralCode: user.referralCode ?? null,
+        createdAt: user.createdAt.toISOString(),
+      },
+      token,
+      refreshToken,
+    });
+  } catch (err) {
+    console.error("Register error:", err);
+    res.status(500).json({ error: "Server", message: "Internal server error" });
+  }
+});
+
+// POST /api/auth/login
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      res.status(400).json({ error: "Validation", message: "Email and password are required" });
+      return;
+    }
+
+    const [user] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.email, email.toLowerCase().trim()))
+      .limit(1);
+
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized", message: "Invalid email or password" });
+      return;
+    }
+
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) {
+      res.status(401).json({ error: "Unauthorized", message: "Invalid email or password" });
+      return;
+    }
+
+    const tokenPayload = { userId: user.id, email: user.email, role: user.role as "customer" | "vendor" | "admin" };
+    const token = signToken(tokenPayload);
+    const refreshToken = signRefreshToken(tokenPayload);
+
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        phone: user.phone ?? null,
+        role: user.role,
+        profileImage: user.profileImage ?? null,
+        referralCode: user.referralCode ?? null,
+        createdAt: user.createdAt.toISOString(),
+      },
+      token,
+      refreshToken,
+    });
+  } catch (err) {
+    console.error("Login error:", err);
+    res.status(500).json({ error: "Server", message: "Internal server error" });
+  }
+});
+
+// GET /api/auth/me
+router.get("/me", requireAuth, async (req, res) => {
+  try {
+    const [user] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, req.user!.userId))
+      .limit(1);
+
+    if (!user) {
+      res.status(404).json({ error: "NotFound", message: "User not found" });
+      return;
+    }
+
+    res.json({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      phone: user.phone ?? null,
+      role: user.role,
+      profileImage: user.profileImage ?? null,
+      referralCode: user.referralCode ?? null,
+      createdAt: user.createdAt.toISOString(),
+    });
+  } catch (err) {
+    console.error("Me error:", err);
+    res.status(500).json({ error: "Server", message: "Internal server error" });
+  }
+});
+
+// POST /api/auth/refresh
+router.post("/refresh", async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      res.status(400).json({ error: "Validation", message: "refreshToken required" });
+      return;
+    }
+
+    const payload = verifyToken(refreshToken);
+    const newToken = signToken({ userId: payload.userId, email: payload.email, role: payload.role });
+    const newRefreshToken = signRefreshToken({ userId: payload.userId, email: payload.email, role: payload.role });
+
+    res.json({ token: newToken, refreshToken: newRefreshToken });
+  } catch {
+    res.status(401).json({ error: "Unauthorized", message: "Invalid refresh token" });
+  }
+});
+
+// POST /api/auth/forgot-password
+router.post("/forgot-password", async (req, res) => {
+  // In production this would send an email - stub for now
+  res.json({ message: "If an account exists with that email, a reset link has been sent." });
+});
+
+export default router;
