@@ -57,9 +57,12 @@ export async function canAccessObject({
 }): Promise<boolean> {
   const aclPolicy = await getObjectAclPolicy(objectFile);
 
-  // No ACL set: allow any authenticated caller (UUID path, not guessable)
+  // No ACL set: allow any caller (authenticated or not).
+  // Object paths are UUID-based and not guessable, so possession of the path
+  // is the only access control. This is required for React Native <Image> to
+  // render portfolio/cover images without bearer token support.
   if (!aclPolicy) {
-    return userId !== undefined;
+    return true;
   }
 
   if (

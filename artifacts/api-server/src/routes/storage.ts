@@ -86,13 +86,18 @@ router.get("/storage/public-objects/*filePath", async (req: Request, res: Respon
 /**
  * GET /storage/objects/*
  *
- * Serve private object entities from PRIVATE_OBJECT_DIR.
- * Requires authentication. canAccessObject enforces ACL when present,
- * and allows any authenticated user when no ACL is set (UUID path security).
+ * Serve object entities from PRIVATE_OBJECT_DIR.
+ *
+ * Auth is OPTIONAL here. Objects without an explicit ACL policy are publicly
+ * accessible by UUID path (security through obscurity — the path is not
+ * guessable). This is required so React Native <Image> components can render
+ * portfolio/cover images without injecting bearer tokens into every request.
+ *
+ * Objects with an explicit ACL policy of visibility:"private" require the
+ * caller to be authenticated as the owner. All other cases are allowed.
  */
 router.get(
   "/storage/objects/*path",
-  requireAccessToken,
   async (req: Request, res: Response) => {
     try {
       const raw = req.params.path;
@@ -100,7 +105,21 @@ router.get(
       const objectPath = `/objects/${wildcardPath}`;
       const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
 
-      const userId = String(req.user!.userId);
+      // Extract userId from token if present (not required)
+      let userId: string | undefined;
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith("Bearer ")) {
+        try {
+          const jwt = await import("jsonwebtoken");
+          const token = authHeader.slice(7);
+          const secret = process.env.SESSION_SECRET ?? "secret";
+          const decoded = jwt.default.verify(token, secret) as { userId?: string | number };
+          userId = decoded.userId !== undefined ? String(decoded.userId) : undefined;
+        } catch {
+          // Invalid token — treat as unauthenticated; ACL check will handle access
+        }
+      }
+
       const canAccess = await objectStorageService.canAccessObjectEntity({
         userId,
         objectFile,
