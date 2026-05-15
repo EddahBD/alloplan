@@ -12,6 +12,16 @@ tags:
     description: Health operations
   - name: auth
     description: Authentication operations
+  - name: vendors
+    description: Vendor marketplace operations
+  - name: services
+    description: Vendor service operations
+  - name: packages
+    description: Service package operations
+  - name: portfolio
+    description: Vendor portfolio operations
+  - name: storage
+    description: Object storage operations
 paths:
   /healthz:
     get:
@@ -229,6 +239,561 @@ paths:
                 required:
                   - message
 
+  # ─── Vendors ────────────────────────────────────────────────────────────────
+
+  /vendors:
+    get:
+      operationId: listVendors
+      tags: [vendors]
+      summary: List and search vendors
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Search query
+        - name: category
+          in: query
+          schema:
+            type: string
+          description: Service category filter
+        - name: location
+          in: query
+          schema:
+            type: string
+          description: Location filter
+        - name: minPrice
+          in: query
+          schema:
+            type: number
+          description: Minimum base price
+        - name: maxPrice
+          in: query
+          schema:
+            type: number
+          description: Maximum base price
+        - name: minRating
+          in: query
+          schema:
+            type: number
+          description: Minimum rating (1-5)
+        - name: available
+          in: query
+          schema:
+            type: boolean
+          description: Filter by availability
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [rating, price_asc, price_desc, newest, relevance]
+          description: Sort order
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 50
+      responses:
+        "200":
+          description: Vendor list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorListResponse"
+
+  /vendors/trending:
+    get:
+      operationId: getTrendingVendors
+      tags: [vendors]
+      summary: Get trending vendors
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Trending vendors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vendors:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/VendorCard"
+                required:
+                  - vendors
+
+  /vendors/featured:
+    get:
+      operationId: getFeaturedVendors
+      tags: [vendors]
+      summary: Get featured vendors
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 6
+      responses:
+        "200":
+          description: Featured vendors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vendors:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/VendorCard"
+                required:
+                  - vendors
+
+  /vendors/my-profile:
+    get:
+      operationId: getMyVendorProfile
+      tags: [vendors]
+      summary: Get authenticated vendor's own profile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Vendor profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorProfile"
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: upsertMyVendorProfile
+      tags: [vendors]
+      summary: Create or update authenticated vendor's profile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertVendorProfileRequest"
+      responses:
+        "200":
+          description: Updated vendor profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorProfile"
+
+  /vendors/{vendorId}:
+    get:
+      operationId: getVendorProfile
+      tags: [vendors]
+      summary: Get vendor profile by ID
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Vendor profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorProfile"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /vendors/{vendorId}/availability:
+    patch:
+      operationId: toggleVendorAvailability
+      tags: [vendors]
+      summary: Toggle vendor availability
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                isAvailable:
+                  type: boolean
+              required:
+                - isAvailable
+      responses:
+        "200":
+          description: Availability updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  isAvailable:
+                    type: boolean
+                required:
+                  - isAvailable
+
+  # ─── Services ───────────────────────────────────────────────────────────────
+
+  /vendors/{vendorId}/services:
+    get:
+      operationId: listVendorServices
+      tags: [services]
+      summary: List services for a vendor
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Services list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  services:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Service"
+                required:
+                  - services
+    post:
+      operationId: createVendorService
+      tags: [services]
+      summary: Create a new service
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateServiceRequest"
+      responses:
+        "201":
+          description: Service created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+
+  /services/{serviceId}:
+    patch:
+      operationId: updateService
+      tags: [services]
+      summary: Update a service
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: serviceId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateServiceRequest"
+      responses:
+        "200":
+          description: Service updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+    delete:
+      operationId: deleteService
+      tags: [services]
+      summary: Delete a service
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: serviceId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                required:
+                  - message
+
+  # ─── Packages ────────────────────────────────────────────────────────────────
+
+  /services/{serviceId}/packages:
+    get:
+      operationId: listServicePackages
+      tags: [packages]
+      summary: List packages for a service
+      parameters:
+        - name: serviceId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Packages list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  packages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Package"
+                required:
+                  - packages
+    post:
+      operationId: createServicePackage
+      tags: [packages]
+      summary: Create a package for a service
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: serviceId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePackageRequest"
+      responses:
+        "201":
+          description: Package created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Package"
+
+  /packages/{packageId}:
+    get:
+      operationId: getPackage
+      tags: [packages]
+      summary: Get package details
+      parameters:
+        - name: packageId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Package detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updatePackage
+      tags: [packages]
+      summary: Update a package
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: packageId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePackageRequest"
+      responses:
+        "200":
+          description: Package updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Package"
+    delete:
+      operationId: deletePackage
+      tags: [packages]
+      summary: Delete a package
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: packageId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                required:
+                  - message
+
+  # ─── Portfolio ────────────────────────────────────────────────────────────────
+
+  /vendors/{vendorId}/portfolio:
+    get:
+      operationId: listPortfolio
+      tags: [portfolio]
+      summary: List portfolio items for a vendor
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Portfolio items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PortfolioItem"
+                required:
+                  - items
+    post:
+      operationId: addPortfolioItem
+      tags: [portfolio]
+      summary: Add a portfolio item
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddPortfolioItemRequest"
+      responses:
+        "201":
+          description: Portfolio item added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioItem"
+
+  /portfolio/{itemId}:
+    delete:
+      operationId: deletePortfolioItem
+      tags: [portfolio]
+      summary: Delete a portfolio item
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                required:
+                  - message
+
+  # ─── Storage ─────────────────────────────────────────────────────────────────
+
+  /storage/uploads/request-url:
+    post:
+      operationId: requestUploadUrl
+      tags: [storage]
+      summary: Request a presigned URL for file upload
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadUrlRequest"
+      responses:
+        "200":
+          description: Presigned upload URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadUrlResponse"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -355,3 +920,448 @@ components:
         - user
         - token
         - refreshToken
+
+    # ─── Vendor Schemas ──────────────────────────────────────────────────────
+
+    VendorCard:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        businessName:
+          type: string
+          nullable: true
+        bio:
+          type: string
+          nullable: true
+        businessType:
+          type: string
+          nullable: true
+        location:
+          type: string
+          nullable: true
+        rating:
+          type: number
+          nullable: true
+        reviewCount:
+          type: integer
+        verified:
+          type: boolean
+        subscriptionTier:
+          type: string
+          enum: [basic, pro, premium]
+        coverImage:
+          type: string
+          nullable: true
+        isAvailable:
+          type: boolean
+        ownerName:
+          type: string
+        isFeatured:
+          type: boolean
+        isTopRated:
+          type: boolean
+        minPrice:
+          type: number
+          nullable: true
+      required:
+        - id
+        - userId
+        - reviewCount
+        - verified
+        - subscriptionTier
+        - isAvailable
+        - ownerName
+        - isFeatured
+        - isTopRated
+
+    VendorProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        businessName:
+          type: string
+          nullable: true
+        bio:
+          type: string
+          nullable: true
+        businessType:
+          type: string
+          nullable: true
+        location:
+          type: string
+          nullable: true
+        rating:
+          type: number
+          nullable: true
+        reviewCount:
+          type: integer
+        verified:
+          type: boolean
+        subscriptionTier:
+          type: string
+          enum: [basic, pro, premium]
+        coverImage:
+          type: string
+          nullable: true
+        responseTime:
+          type: string
+          nullable: true
+        isAvailable:
+          type: boolean
+        ownerName:
+          type: string
+        ownerProfileImage:
+          type: string
+          nullable: true
+        isFeatured:
+          type: boolean
+        isTopRated:
+          type: boolean
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/Service"
+        portfolio:
+          type: array
+          items:
+            $ref: "#/components/schemas/PortfolioItem"
+        recentReviews:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewSummary"
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - reviewCount
+        - verified
+        - subscriptionTier
+        - isAvailable
+        - ownerName
+        - isFeatured
+        - isTopRated
+        - services
+        - portfolio
+        - recentReviews
+        - createdAt
+
+    VendorListResponse:
+      type: object
+      properties:
+        vendors:
+          type: array
+          items:
+            $ref: "#/components/schemas/VendorCard"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+        hasMore:
+          type: boolean
+      required:
+        - vendors
+        - total
+        - page
+        - limit
+        - hasMore
+
+    UpsertVendorProfileRequest:
+      type: object
+      properties:
+        businessName:
+          type: string
+        bio:
+          type: string
+        businessType:
+          type: string
+        location:
+          type: string
+        coverImage:
+          type: string
+        responseTime:
+          type: string
+
+    Service:
+      type: object
+      properties:
+        id:
+          type: integer
+        vendorId:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        category:
+          type: string
+        basePrice:
+          type: number
+        isActive:
+          type: boolean
+        images:
+          type: array
+          items:
+            type: string
+        packagesCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - vendorId
+        - name
+        - category
+        - basePrice
+        - isActive
+        - images
+        - packagesCount
+        - createdAt
+
+    CreateServiceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        basePrice:
+          type: number
+        images:
+          type: array
+          items:
+            type: string
+      required:
+        - name
+        - category
+        - basePrice
+
+    UpdateServiceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        basePrice:
+          type: number
+        images:
+          type: array
+          items:
+            type: string
+        isActive:
+          type: boolean
+
+    Package:
+      type: object
+      properties:
+        id:
+          type: integer
+        serviceId:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        price:
+          type: number
+        inclusions:
+          type: array
+          items:
+            type: string
+        durationHours:
+          type: integer
+          nullable: true
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - serviceId
+        - name
+        - price
+        - inclusions
+        - isActive
+        - createdAt
+
+    PackageDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+        serviceId:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        price:
+          type: number
+        inclusions:
+          type: array
+          items:
+            type: string
+        durationHours:
+          type: integer
+          nullable: true
+        isActive:
+          type: boolean
+        service:
+          $ref: "#/components/schemas/Service"
+        vendor:
+          $ref: "#/components/schemas/VendorCard"
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - serviceId
+        - name
+        - price
+        - inclusions
+        - isActive
+        - service
+        - vendor
+        - createdAt
+
+    CreatePackageRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        inclusions:
+          type: array
+          items:
+            type: string
+        durationHours:
+          type: integer
+      required:
+        - name
+        - price
+
+    UpdatePackageRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        inclusions:
+          type: array
+          items:
+            type: string
+        durationHours:
+          type: integer
+        isActive:
+          type: boolean
+
+    PortfolioItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        vendorId:
+          type: integer
+        imageUrl:
+          type: string
+        caption:
+          type: string
+          nullable: true
+        eventType:
+          type: string
+          nullable: true
+        sortOrder:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - vendorId
+        - imageUrl
+        - sortOrder
+        - createdAt
+
+    AddPortfolioItemRequest:
+      type: object
+      properties:
+        imageUrl:
+          type: string
+        caption:
+          type: string
+        eventType:
+          type: string
+        sortOrder:
+          type: integer
+      required:
+        - imageUrl
+
+    ReviewSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        rating:
+          type: integer
+        comment:
+          type: string
+          nullable: true
+        reviewerName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - rating
+        - reviewerName
+        - createdAt
+
+    UploadUrlRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        size:
+          type: integer
+        contentType:
+          type: string
+      required:
+        - name
+        - contentType
+
+    UploadUrlResponse:
+      type: object
+      properties:
+        uploadURL:
+          type: string
+        objectPath:
+          type: string
+      required:
+        - uploadURL
+        - objectPath

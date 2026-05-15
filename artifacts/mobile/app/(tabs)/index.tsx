@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Platform,
+  Image,
+  ActivityIndicator,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -13,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { apiRequest } from "@/hooks/useApi";
 
 const EVENT_CATEGORIES = [
   { id: "wedding", label: "Wedding", icon: "heart" as const, color: "#FF6B35" },
@@ -26,16 +29,48 @@ const EVENT_CATEGORIES = [
 const QUICK_ACTIONS = [
   { id: "create", label: "Create Event", icon: "add-circle" as const, route: "/(tabs)/planner" as const },
   { id: "vendors", label: "Find Vendors", icon: "storefront" as const, route: "/(tabs)/marketplace" as const },
-  { id: "wallet", label: "My Wallet", icon: "wallet" as const, route: "/(tabs)/profile" as const },
+  { id: "wallet", label: "My Wallet", icon: "wallet" as const, route: "/(tabs)/wallet" as const },
   { id: "refer", label: "Refer & Earn", icon: "share-social" as const, route: "/(tabs)/profile" as const },
 ];
+
+interface VendorCard {
+  id: number;
+  businessName?: string | null;
+  businessType?: string | null;
+  location?: string | null;
+  rating?: number | null;
+  reviewCount: number;
+  verified: boolean;
+  coverImage?: string | null;
+  isAvailable: boolean;
+  ownerName: string;
+  isTopRated: boolean;
+  isFeatured: boolean;
+  minPrice?: number | null;
+}
 
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const [trendingVendors, setTrendingVendors] = useState<VendorCard[]>([]);
+  const [trendingLoading, setTrendingLoading] = useState(true);
 
   const firstName = user?.name?.split(" ")[0] ?? "there";
+
+  const loadTrending = useCallback(async () => {
+    setTrendingLoading(true);
+    try {
+      const data = await apiRequest<{ vendors: VendorCard[] }>("/vendors/trending?limit=6");
+      setTrendingVendors(data.vendors);
+    } catch {
+      setTrendingVendors([]);
+    } finally {
+      setTrendingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadTrending(); }, [loadTrending]);
 
   return (
     <ScrollView
@@ -85,7 +120,7 @@ export default function HomeScreen() {
           </View>
           <TouchableOpacity
             style={[styles.topUpBtn, { backgroundColor: colors.primary, borderRadius: colors.radius / 2 }]}
-            onPress={() => {}}
+            onPress={() => router.push("/(tabs)/wallet" as never)}
           >
             <Text style={[styles.topUpText, { color: "#fff", fontFamily: "Poppins_600SemiBold" }]}>
               Top Up
@@ -122,13 +157,102 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      {/* Trending Vendors */}
+      <View style={[styles.section]}>
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionTitleRow}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>
+              Trending Vendors
+            </Text>
+            <View style={[styles.fireBadge, { backgroundColor: colors.primary + "18" }]}>
+              <Text style={styles.fireEmoji}>🔥</Text>
+            </View>
+          </View>
+          <TouchableOpacity onPress={() => router.push("/(tabs)/marketplace" as never)}>
+            <Text style={[styles.seeAll, { color: colors.primary, fontFamily: "Poppins_500Medium" }]}>
+              See All
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {trendingLoading ? (
+          <View style={styles.trendingLoader}>
+            <ActivityIndicator color={colors.primary} />
+          </View>
+        ) : trendingVendors.length === 0 ? (
+          <View style={[styles.trendingEmpty, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+            <Ionicons name="storefront-outline" size={32} color={colors.border} />
+            <Text style={[styles.trendingEmptyText, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]}>
+              Vendors coming soon
+            </Text>
+          </View>
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trendingRow}>
+            {trendingVendors.map((vendor) => (
+              <TouchableOpacity
+                key={vendor.id}
+                testID={`trending-vendor-${vendor.id}`}
+                activeOpacity={0.88}
+                onPress={() => router.push(`/vendor/${vendor.id}` as never)}
+                style={[styles.trendingCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
+              >
+                {/* Cover */}
+                <View style={[styles.trendingCover, { borderRadius: colors.radius, overflow: "hidden" }]}>
+                  {vendor.coverImage ? (
+                    <Image source={{ uri: vendor.coverImage }} style={styles.trendingCoverImg} />
+                  ) : (
+                    <View style={[styles.trendingCoverPlaceholder, { backgroundColor: colors.secondary }]}>
+                      <Ionicons name="storefront-outline" size={28} color={colors.primary} />
+                    </View>
+                  )}
+                  {vendor.isTopRated && (
+                    <View style={[styles.topBadge, { backgroundColor: colors.accent }]}>
+                      <Ionicons name="star" size={9} color="#0D1B2A" />
+                      <Text style={[styles.topBadgeText, { color: "#0D1B2A", fontFamily: "Poppins_600SemiBold" }]}>Top</Text>
+                    </View>
+                  )}
+                  <View style={[styles.availDot, { backgroundColor: vendor.isAvailable ? "#10B981" : "#6B7689" }]} />
+                </View>
+                {/* Info */}
+                <View style={styles.trendingInfo}>
+                  <Text style={[styles.trendingName, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]} numberOfLines={1}>
+                    {vendor.businessName || vendor.ownerName}
+                  </Text>
+                  {vendor.businessType && (
+                    <Text style={[styles.trendingType, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]} numberOfLines={1}>
+                      {vendor.businessType}
+                    </Text>
+                  )}
+                  <View style={styles.trendingMeta}>
+                    <Ionicons name="star" size={11} color={colors.accent} />
+                    <Text style={[styles.trendingRating, { color: colors.foreground, fontFamily: "Poppins_500Medium" }]}>
+                      {vendor.rating ? vendor.rating.toFixed(1) : "New"}
+                    </Text>
+                    {vendor.reviewCount > 0 && (
+                      <Text style={[styles.trendingReviews, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]}>
+                        ({vendor.reviewCount})
+                      </Text>
+                    )}
+                  </View>
+                  {vendor.minPrice && (
+                    <Text style={[styles.trendingPrice, { color: colors.primary, fontFamily: "Poppins_600SemiBold" }]}>
+                      From TZS {vendor.minPrice.toLocaleString()}
+                    </Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+      </View>
+
       {/* Event Categories */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>
             Plan by Event
           </Text>
-          <TouchableOpacity onPress={() => router.push("/(tabs)/marketplace")}>
+          <TouchableOpacity onPress={() => router.push("/(tabs)/marketplace" as never)}>
             <Text style={[styles.seeAll, { color: colors.primary, fontFamily: "Poppins_500Medium" }]}>
               Browse All
             </Text>
@@ -141,7 +265,7 @@ export default function HomeScreen() {
               testID={`category-${cat.id}`}
               activeOpacity={0.8}
               style={[styles.categoryCard, { backgroundColor: cat.color + "18", borderRadius: colors.radius }]}
-              onPress={() => router.push("/(tabs)/marketplace")}
+              onPress={() => router.push("/(tabs)/marketplace" as never)}
             >
               <View style={[styles.categoryIcon, { backgroundColor: cat.color + "22", borderRadius: 12 }]}>
                 <Ionicons name={cat.icon} size={22} color={cat.color} />
@@ -158,7 +282,7 @@ export default function HomeScreen() {
       <View style={[styles.section]}>
         <TouchableOpacity
           activeOpacity={0.9}
-          onPress={() => router.push("/(tabs)/planner")}
+          onPress={() => router.push("/(tabs)/planner" as never)}
           testID="get-started-banner"
         >
           <LinearGradient
@@ -226,8 +350,11 @@ const styles = StyleSheet.create({
   topUpText: { fontSize: 13 },
   section: { paddingHorizontal: 20, marginBottom: 8 },
   sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  sectionTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   sectionTitle: { fontSize: 17, marginBottom: 12 },
   seeAll: { fontSize: 13 },
+  fireBadge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
+  fireEmoji: { fontSize: 14 },
   actionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   actionCard: {
     width: "47%",
@@ -243,6 +370,24 @@ const styles = StyleSheet.create({
   },
   actionIcon: { width: 52, height: 52, alignItems: "center", justifyContent: "center" },
   actionLabel: { fontSize: 13, textAlign: "center" },
+  trendingLoader: { height: 160, alignItems: "center", justifyContent: "center" },
+  trendingEmpty: { height: 100, alignItems: "center", justifyContent: "center", borderWidth: 1, gap: 8 },
+  trendingEmptyText: { fontSize: 13 },
+  trendingRow: { gap: 12, paddingRight: 4 },
+  trendingCard: { width: 160, borderWidth: 1, overflow: "hidden" },
+  trendingCover: { height: 110, position: "relative" },
+  trendingCoverImg: { width: "100%", height: "100%", resizeMode: "cover" },
+  trendingCoverPlaceholder: { flex: 1, alignItems: "center", justifyContent: "center" },
+  topBadge: { position: "absolute", top: 8, left: 8, flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 999 },
+  topBadgeText: { fontSize: 9 },
+  availDot: { position: "absolute", top: 8, right: 8, width: 8, height: 8, borderRadius: 4 },
+  trendingInfo: { padding: 10, gap: 3 },
+  trendingName: { fontSize: 13 },
+  trendingType: { fontSize: 11 },
+  trendingMeta: { flexDirection: "row", alignItems: "center", gap: 3 },
+  trendingRating: { fontSize: 12 },
+  trendingReviews: { fontSize: 11 },
+  trendingPrice: { fontSize: 11, marginTop: 2 },
   categoriesRow: { gap: 12, paddingRight: 20 },
   categoryCard: { padding: 14, alignItems: "center", gap: 8, width: 90 },
   categoryIcon: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },

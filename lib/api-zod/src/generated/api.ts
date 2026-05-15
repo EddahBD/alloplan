@@ -127,3 +127,573 @@ export const AuthRegisterPushTokenResponse = zod.object({
 })
 
 
+/**
+ * @summary List and search vendors
+ */
+export const listVendorsQueryPageDefault = 1;
+export const listVendorsQueryLimitDefault = 20;
+export const listVendorsQueryLimitMax = 50;
+
+
+
+export const ListVendorsQueryParams = zod.object({
+  "q": zod.coerce.string().optional().describe('Search query'),
+  "category": zod.coerce.string().optional().describe('Service category filter'),
+  "location": zod.coerce.string().optional().describe('Location filter'),
+  "minPrice": zod.coerce.number().optional().describe('Minimum base price'),
+  "maxPrice": zod.coerce.number().optional().describe('Maximum base price'),
+  "minRating": zod.coerce.number().optional().describe('Minimum rating (1-5)'),
+  "available": zod.coerce.boolean().optional().describe('Filter by availability'),
+  "sortBy": zod.enum(['rating', 'price_asc', 'price_desc', 'newest', 'relevance']).optional().describe('Sort order'),
+  "page": zod.coerce.number().default(listVendorsQueryPageDefault),
+  "limit": zod.coerce.number().max(listVendorsQueryLimitMax).default(listVendorsQueryLimitDefault)
+})
+
+export const ListVendorsResponse = zod.object({
+  "vendors": zod.array(zod.object({
+  "id": zod.number(),
+  "userId": zod.number(),
+  "businessName": zod.string().nullish(),
+  "bio": zod.string().nullish(),
+  "businessType": zod.string().nullish(),
+  "location": zod.string().nullish(),
+  "rating": zod.number().nullish(),
+  "reviewCount": zod.number(),
+  "verified": zod.boolean(),
+  "subscriptionTier": zod.enum(['basic', 'pro', 'premium']),
+  "coverImage": zod.string().nullish(),
+  "isAvailable": zod.boolean(),
+  "ownerName": zod.string(),
+  "isFeatured": zod.boolean(),
+  "isTopRated": zod.boolean(),
+  "minPrice": zod.number().nullish()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "limit": zod.number(),
+  "hasMore": zod.boolean()
+})
+
+
+/**
+ * @summary Get trending vendors
+ */
+export const getTrendingVendorsQueryLimitDefault = 10;
+
+export const GetTrendingVendorsQueryParams = zod.object({
+  "limit": zod.coerce.number().default(getTrendingVendorsQueryLimitDefault)
+})
+
+export const GetTrendingVendorsResponse = zod.object({
+  "vendors": zod.array(zod.object({
+  "id": zod.number(),
+  "userId": zod.number(),
+  "businessName": zod.string().nullish(),
+  "bio": zod.string().nullish(),
+  "businessType": zod.string().nullish(),
+  "location": zod.string().nullish(),
+  "rating": zod.number().nullish(),
+  "reviewCount": zod.number(),
+  "verified": zod.boolean(),
+  "subscriptionTier": zod.enum(['basic', 'pro', 'premium']),
+  "coverImage": zod.string().nullish(),
+  "isAvailable": zod.boolean(),
+  "ownerName": zod.string(),
+  "isFeatured": zod.boolean(),
+  "isTopRated": zod.boolean(),
+  "minPrice": zod.number().nullish()
+}))
+})
+
+
+/**
+ * @summary Get featured vendors
+ */
+export const getFeaturedVendorsQueryLimitDefault = 6;
+
+export const GetFeaturedVendorsQueryParams = zod.object({
+  "limit": zod.coerce.number().default(getFeaturedVendorsQueryLimitDefault)
+})
+
+export const GetFeaturedVendorsResponse = zod.object({
+  "vendors": zod.array(zod.object({
+  "id": zod.number(),
+  "userId": zod.number(),
+  "businessName": zod.string().nullish(),
+  "bio": zod.string().nullish(),
+  "businessType": zod.string().nullish(),
+  "location": zod.string().nullish(),
+  "rating": zod.number().nullish(),
+  "reviewCount": zod.number(),
+  "verified": zod.boolean(),
+  "subscriptionTier": zod.enum(['basic', 'pro', 'premium']),
+  "coverImage": zod.string().nullish(),
+  "isAvailable": zod.boolean(),
+  "ownerName": zod.string(),
+  "isFeatured": zod.boolean(),
+  "isTopRated": zod.boolean(),
+  "minPrice": zod.number().nullish()
+}))
+})
+
+
+/**
+ * @summary Get authenticated vendor's own profile
+ */
+export const GetMyVendorProfileResponse = zod.object({
+  "id": zod.number(),
+  "userId": zod.number(),
+  "businessName": zod.string().nullish(),
+  "bio": zod.string().nullish(),
+  "businessType": zod.string().nullish(),
+  "location": zod.string().nullish(),
+  "rating": zod.number().nullish(),
+  "reviewCount": zod.number(),
+  "verified": zod.boolean(),
+  "subscriptionTier": zod.enum(['basic', 'pro', 'premium']),
+  "coverImage": zod.string().nullish(),
+  "responseTime": zod.string().nullish(),
+  "isAvailable": zod.boolean(),
+  "ownerName": zod.string(),
+  "ownerProfileImage": zod.string().nullish(),
+  "isFeatured": zod.boolean(),
+  "isTopRated": zod.boolean(),
+  "services": zod.array(zod.object({
+  "id": zod.number(),
+  "vendorId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "category": zod.string(),
+  "basePrice": zod.number(),
+  "isActive": zod.boolean(),
+  "images": zod.array(zod.string()),
+  "packagesCount": zod.number(),
+  "createdAt": zod.coerce.date()
+})),
+  "portfolio": zod.array(zod.object({
+  "id": zod.number(),
+  "vendorId": zod.number(),
+  "imageUrl": zod.string(),
+  "caption": zod.string().nullish(),
+  "eventType": zod.string().nullish(),
+  "sortOrder": zod.number(),
+  "createdAt": zod.coerce.date()
+})),
+  "recentReviews": zod.array(zod.object({
+  "id": zod.number(),
+  "rating": zod.number(),
+  "comment": zod.string().nullish(),
+  "reviewerName": zod.string(),
+  "createdAt": zod.coerce.date()
+})),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Create or update authenticated vendor's profile
+ */
+export const UpsertMyVendorProfileBody = zod.object({
+  "businessName": zod.string().optional(),
+  "bio": zod.string().optional(),
+  "businessType": zod.string().optional(),
+  "location": zod.string().optional(),
+  "coverImage": zod.string().optional(),
+  "responseTime": zod.string().optional()
+})
+
+export const UpsertMyVendorProfileResponse = zod.object({
+  "id": zod.number(),
+  "userId": zod.number(),
+  "businessName": zod.string().nullish(),
+  "bio": zod.string().nullish(),
+  "businessType": zod.string().nullish(),
+  "location": zod.string().nullish(),
+  "rating": zod.number().nullish(),
+  "reviewCount": zod.number(),
+  "verified": zod.boolean(),
+  "subscriptionTier": zod.enum(['basic', 'pro', 'premium']),
+  "coverImage": zod.string().nullish(),
+  "responseTime": zod.string().nullish(),
+  "isAvailable": zod.boolean(),
+  "ownerName": zod.string(),
+  "ownerProfileImage": zod.string().nullish(),
+  "isFeatured": zod.boolean(),
+  "isTopRated": zod.boolean(),
+  "services": zod.array(zod.object({
+  "id": zod.number(),
+  "vendorId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "category": zod.string(),
+  "basePrice": zod.number(),
+  "isActive": zod.boolean(),
+  "images": zod.array(zod.string()),
+  "packagesCount": zod.number(),
+  "createdAt": zod.coerce.date()
+})),
+  "portfolio": zod.array(zod.object({
+  "id": zod.number(),
+  "vendorId": zod.number(),
+  "imageUrl": zod.string(),
+  "caption": zod.string().nullish(),
+  "eventType": zod.string().nullish(),
+  "sortOrder": zod.number(),
+  "createdAt": zod.coerce.date()
+})),
+  "recentReviews": zod.array(zod.object({
+  "id": zod.number(),
+  "rating": zod.number(),
+  "comment": zod.string().nullish(),
+  "reviewerName": zod.string(),
+  "createdAt": zod.coerce.date()
+})),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get vendor profile by ID
+ */
+export const GetVendorProfileParams = zod.object({
+  "vendorId": zod.coerce.number()
+})
+
+export const GetVendorProfileResponse = zod.object({
+  "id": zod.number(),
+  "userId": zod.number(),
+  "businessName": zod.string().nullish(),
+  "bio": zod.string().nullish(),
+  "businessType": zod.string().nullish(),
+  "location": zod.string().nullish(),
+  "rating": zod.number().nullish(),
+  "reviewCount": zod.number(),
+  "verified": zod.boolean(),
+  "subscriptionTier": zod.enum(['basic', 'pro', 'premium']),
+  "coverImage": zod.string().nullish(),
+  "responseTime": zod.string().nullish(),
+  "isAvailable": zod.boolean(),
+  "ownerName": zod.string(),
+  "ownerProfileImage": zod.string().nullish(),
+  "isFeatured": zod.boolean(),
+  "isTopRated": zod.boolean(),
+  "services": zod.array(zod.object({
+  "id": zod.number(),
+  "vendorId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "category": zod.string(),
+  "basePrice": zod.number(),
+  "isActive": zod.boolean(),
+  "images": zod.array(zod.string()),
+  "packagesCount": zod.number(),
+  "createdAt": zod.coerce.date()
+})),
+  "portfolio": zod.array(zod.object({
+  "id": zod.number(),
+  "vendorId": zod.number(),
+  "imageUrl": zod.string(),
+  "caption": zod.string().nullish(),
+  "eventType": zod.string().nullish(),
+  "sortOrder": zod.number(),
+  "createdAt": zod.coerce.date()
+})),
+  "recentReviews": zod.array(zod.object({
+  "id": zod.number(),
+  "rating": zod.number(),
+  "comment": zod.string().nullish(),
+  "reviewerName": zod.string(),
+  "createdAt": zod.coerce.date()
+})),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Toggle vendor availability
+ */
+export const ToggleVendorAvailabilityParams = zod.object({
+  "vendorId": zod.coerce.number()
+})
+
+export const ToggleVendorAvailabilityBody = zod.object({
+  "isAvailable": zod.boolean()
+})
+
+export const ToggleVendorAvailabilityResponse = zod.object({
+  "isAvailable": zod.boolean()
+})
+
+
+/**
+ * @summary List services for a vendor
+ */
+export const ListVendorServicesParams = zod.object({
+  "vendorId": zod.coerce.number()
+})
+
+export const ListVendorServicesResponse = zod.object({
+  "services": zod.array(zod.object({
+  "id": zod.number(),
+  "vendorId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "category": zod.string(),
+  "basePrice": zod.number(),
+  "isActive": zod.boolean(),
+  "images": zod.array(zod.string()),
+  "packagesCount": zod.number(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Create a new service
+ */
+export const CreateVendorServiceParams = zod.object({
+  "vendorId": zod.coerce.number()
+})
+
+export const CreateVendorServiceBody = zod.object({
+  "name": zod.string(),
+  "description": zod.string().optional(),
+  "category": zod.string(),
+  "basePrice": zod.number(),
+  "images": zod.array(zod.string()).optional()
+})
+
+
+/**
+ * @summary Update a service
+ */
+export const UpdateServiceParams = zod.object({
+  "serviceId": zod.coerce.number()
+})
+
+export const UpdateServiceBody = zod.object({
+  "name": zod.string().optional(),
+  "description": zod.string().optional(),
+  "category": zod.string().optional(),
+  "basePrice": zod.number().optional(),
+  "images": zod.array(zod.string()).optional(),
+  "isActive": zod.boolean().optional()
+})
+
+export const UpdateServiceResponse = zod.object({
+  "id": zod.number(),
+  "vendorId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "category": zod.string(),
+  "basePrice": zod.number(),
+  "isActive": zod.boolean(),
+  "images": zod.array(zod.string()),
+  "packagesCount": zod.number(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete a service
+ */
+export const DeleteServiceParams = zod.object({
+  "serviceId": zod.coerce.number()
+})
+
+export const DeleteServiceResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
+ * @summary List packages for a service
+ */
+export const ListServicePackagesParams = zod.object({
+  "serviceId": zod.coerce.number()
+})
+
+export const ListServicePackagesResponse = zod.object({
+  "packages": zod.array(zod.object({
+  "id": zod.number(),
+  "serviceId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "price": zod.number(),
+  "inclusions": zod.array(zod.string()),
+  "durationHours": zod.number().nullish(),
+  "isActive": zod.boolean(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Create a package for a service
+ */
+export const CreateServicePackageParams = zod.object({
+  "serviceId": zod.coerce.number()
+})
+
+export const CreateServicePackageBody = zod.object({
+  "name": zod.string(),
+  "description": zod.string().optional(),
+  "price": zod.number(),
+  "inclusions": zod.array(zod.string()).optional(),
+  "durationHours": zod.number().optional()
+})
+
+
+/**
+ * @summary Get package details
+ */
+export const GetPackageParams = zod.object({
+  "packageId": zod.coerce.number()
+})
+
+export const GetPackageResponse = zod.object({
+  "id": zod.number(),
+  "serviceId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "price": zod.number(),
+  "inclusions": zod.array(zod.string()),
+  "durationHours": zod.number().nullish(),
+  "isActive": zod.boolean(),
+  "service": zod.object({
+  "id": zod.number(),
+  "vendorId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "category": zod.string(),
+  "basePrice": zod.number(),
+  "isActive": zod.boolean(),
+  "images": zod.array(zod.string()),
+  "packagesCount": zod.number(),
+  "createdAt": zod.coerce.date()
+}),
+  "vendor": zod.object({
+  "id": zod.number(),
+  "userId": zod.number(),
+  "businessName": zod.string().nullish(),
+  "bio": zod.string().nullish(),
+  "businessType": zod.string().nullish(),
+  "location": zod.string().nullish(),
+  "rating": zod.number().nullish(),
+  "reviewCount": zod.number(),
+  "verified": zod.boolean(),
+  "subscriptionTier": zod.enum(['basic', 'pro', 'premium']),
+  "coverImage": zod.string().nullish(),
+  "isAvailable": zod.boolean(),
+  "ownerName": zod.string(),
+  "isFeatured": zod.boolean(),
+  "isTopRated": zod.boolean(),
+  "minPrice": zod.number().nullish()
+}),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update a package
+ */
+export const UpdatePackageParams = zod.object({
+  "packageId": zod.coerce.number()
+})
+
+export const UpdatePackageBody = zod.object({
+  "name": zod.string().optional(),
+  "description": zod.string().optional(),
+  "price": zod.number().optional(),
+  "inclusions": zod.array(zod.string()).optional(),
+  "durationHours": zod.number().optional(),
+  "isActive": zod.boolean().optional()
+})
+
+export const UpdatePackageResponse = zod.object({
+  "id": zod.number(),
+  "serviceId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "price": zod.number(),
+  "inclusions": zod.array(zod.string()),
+  "durationHours": zod.number().nullish(),
+  "isActive": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete a package
+ */
+export const DeletePackageParams = zod.object({
+  "packageId": zod.coerce.number()
+})
+
+export const DeletePackageResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
+ * @summary List portfolio items for a vendor
+ */
+export const ListPortfolioParams = zod.object({
+  "vendorId": zod.coerce.number()
+})
+
+export const ListPortfolioResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "vendorId": zod.number(),
+  "imageUrl": zod.string(),
+  "caption": zod.string().nullish(),
+  "eventType": zod.string().nullish(),
+  "sortOrder": zod.number(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Add a portfolio item
+ */
+export const AddPortfolioItemParams = zod.object({
+  "vendorId": zod.coerce.number()
+})
+
+export const AddPortfolioItemBody = zod.object({
+  "imageUrl": zod.string(),
+  "caption": zod.string().optional(),
+  "eventType": zod.string().optional(),
+  "sortOrder": zod.number().optional()
+})
+
+
+/**
+ * @summary Delete a portfolio item
+ */
+export const DeletePortfolioItemParams = zod.object({
+  "itemId": zod.coerce.number()
+})
+
+export const DeletePortfolioItemResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
+ * @summary Request a presigned URL for file upload
+ */
+export const RequestUploadUrlBody = zod.object({
+  "name": zod.string(),
+  "size": zod.number().optional(),
+  "contentType": zod.string()
+})
+
+export const RequestUploadUrlResponse = zod.object({
+  "uploadURL": zod.string(),
+  "objectPath": zod.string()
+})
+
+

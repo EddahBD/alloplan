@@ -72,6 +72,193 @@ export interface AuthResponse {
   refreshToken: string;
 }
 
+export type VendorCardSubscriptionTier = typeof VendorCardSubscriptionTier[keyof typeof VendorCardSubscriptionTier];
+
+
+export const VendorCardSubscriptionTier = {
+  basic: 'basic',
+  pro: 'pro',
+  premium: 'premium',
+} as const;
+
+export interface VendorCard {
+  id: number;
+  userId: number;
+  businessName?: string | null;
+  bio?: string | null;
+  businessType?: string | null;
+  location?: string | null;
+  rating?: number | null;
+  reviewCount: number;
+  verified: boolean;
+  subscriptionTier: VendorCardSubscriptionTier;
+  coverImage?: string | null;
+  isAvailable: boolean;
+  ownerName: string;
+  isFeatured: boolean;
+  isTopRated: boolean;
+  minPrice?: number | null;
+}
+
+export type VendorProfileSubscriptionTier = typeof VendorProfileSubscriptionTier[keyof typeof VendorProfileSubscriptionTier];
+
+
+export const VendorProfileSubscriptionTier = {
+  basic: 'basic',
+  pro: 'pro',
+  premium: 'premium',
+} as const;
+
+export interface Service {
+  id: number;
+  vendorId: number;
+  name: string;
+  description?: string | null;
+  category: string;
+  basePrice: number;
+  isActive: boolean;
+  images: string[];
+  packagesCount: number;
+  createdAt: string;
+}
+
+export interface PortfolioItem {
+  id: number;
+  vendorId: number;
+  imageUrl: string;
+  caption?: string | null;
+  eventType?: string | null;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface ReviewSummary {
+  id: number;
+  rating: number;
+  comment?: string | null;
+  reviewerName: string;
+  createdAt: string;
+}
+
+export interface VendorProfile {
+  id: number;
+  userId: number;
+  businessName?: string | null;
+  bio?: string | null;
+  businessType?: string | null;
+  location?: string | null;
+  rating?: number | null;
+  reviewCount: number;
+  verified: boolean;
+  subscriptionTier: VendorProfileSubscriptionTier;
+  coverImage?: string | null;
+  responseTime?: string | null;
+  isAvailable: boolean;
+  ownerName: string;
+  ownerProfileImage?: string | null;
+  isFeatured: boolean;
+  isTopRated: boolean;
+  services: Service[];
+  portfolio: PortfolioItem[];
+  recentReviews: ReviewSummary[];
+  createdAt: string;
+}
+
+export interface VendorListResponse {
+  vendors: VendorCard[];
+  total: number;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+export interface UpsertVendorProfileRequest {
+  businessName?: string;
+  bio?: string;
+  businessType?: string;
+  location?: string;
+  coverImage?: string;
+  responseTime?: string;
+}
+
+export interface CreateServiceRequest {
+  name: string;
+  description?: string;
+  category: string;
+  basePrice: number;
+  images?: string[];
+}
+
+export interface UpdateServiceRequest {
+  name?: string;
+  description?: string;
+  category?: string;
+  basePrice?: number;
+  images?: string[];
+  isActive?: boolean;
+}
+
+export interface Package {
+  id: number;
+  serviceId: number;
+  name: string;
+  description?: string | null;
+  price: number;
+  inclusions: string[];
+  durationHours?: number | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface PackageDetail {
+  id: number;
+  serviceId: number;
+  name: string;
+  description?: string | null;
+  price: number;
+  inclusions: string[];
+  durationHours?: number | null;
+  isActive: boolean;
+  service: Service;
+  vendor: VendorCard;
+  createdAt: string;
+}
+
+export interface CreatePackageRequest {
+  name: string;
+  description?: string;
+  price: number;
+  inclusions?: string[];
+  durationHours?: number;
+}
+
+export interface UpdatePackageRequest {
+  name?: string;
+  description?: string;
+  price?: number;
+  inclusions?: string[];
+  durationHours?: number;
+  isActive?: boolean;
+}
+
+export interface AddPortfolioItemRequest {
+  imageUrl: string;
+  caption?: string;
+  eventType?: string;
+  sortOrder?: number;
+}
+
+export interface UploadUrlRequest {
+  name: string;
+  size?: number;
+  contentType: string;
+}
+
+export interface UploadUrlResponse {
+  uploadURL: string;
+  objectPath: string;
+}
+
 export type AuthForgotPasswordBody = {
   email: string;
 };
@@ -95,6 +282,105 @@ export type AuthRegisterPushTokenBody = {
 };
 
 export type AuthRegisterPushToken200 = {
+  message: string;
+};
+
+export type ListVendorsParams = {
+/**
+ * Search query
+ */
+q?: string;
+/**
+ * Service category filter
+ */
+category?: string;
+/**
+ * Location filter
+ */
+location?: string;
+/**
+ * Minimum base price
+ */
+minPrice?: number;
+/**
+ * Maximum base price
+ */
+maxPrice?: number;
+/**
+ * Minimum rating (1-5)
+ */
+minRating?: number;
+/**
+ * Filter by availability
+ */
+available?: boolean;
+/**
+ * Sort order
+ */
+sortBy?: ListVendorsSortBy;
+page?: number;
+/**
+ * @maximum 50
+ */
+limit?: number;
+};
+
+export type ListVendorsSortBy = typeof ListVendorsSortBy[keyof typeof ListVendorsSortBy];
+
+
+export const ListVendorsSortBy = {
+  rating: 'rating',
+  price_asc: 'price_asc',
+  price_desc: 'price_desc',
+  newest: 'newest',
+  relevance: 'relevance',
+} as const;
+
+export type GetTrendingVendorsParams = {
+limit?: number;
+};
+
+export type GetTrendingVendors200 = {
+  vendors: VendorCard[];
+};
+
+export type GetFeaturedVendorsParams = {
+limit?: number;
+};
+
+export type GetFeaturedVendors200 = {
+  vendors: VendorCard[];
+};
+
+export type ToggleVendorAvailabilityBody = {
+  isAvailable: boolean;
+};
+
+export type ToggleVendorAvailability200 = {
+  isAvailable: boolean;
+};
+
+export type ListVendorServices200 = {
+  services: Service[];
+};
+
+export type DeleteService200 = {
+  message: string;
+};
+
+export type ListServicePackages200 = {
+  packages: Package[];
+};
+
+export type DeletePackage200 = {
+  message: string;
+};
+
+export type ListPortfolio200 = {
+  items: PortfolioItem[];
+};
+
+export type DeletePortfolioItem200 = {
   message: string;
 };
 
