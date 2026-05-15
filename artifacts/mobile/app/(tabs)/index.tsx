@@ -16,6 +16,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest } from "@/hooks/useApi";
+import { useRecentlyViewed } from "@/hooks/useRecentlyViewed";
 
 const EVENT_CATEGORIES = [
   { id: "wedding", label: "Wedding", icon: "heart" as const, color: "#FF6B35" },
@@ -55,6 +56,7 @@ export default function HomeScreen() {
   const { user } = useAuth();
   const [trendingVendors, setTrendingVendors] = useState<VendorCard[]>([]);
   const [trendingLoading, setTrendingLoading] = useState(true);
+  const { vendors: recentVendors, load: loadRecent } = useRecentlyViewed();
 
   const firstName = user?.name?.split(" ")[0] ?? "there";
 
@@ -70,7 +72,7 @@ export default function HomeScreen() {
     }
   }, []);
 
-  useEffect(() => { loadTrending(); }, [loadTrending]);
+  useEffect(() => { loadTrending(); loadRecent(); }, [loadTrending, loadRecent]);
 
   return (
     <ScrollView
@@ -245,6 +247,73 @@ export default function HomeScreen() {
           </ScrollView>
         )}
       </View>
+
+      {/* Recently Viewed */}
+      {recentVendors.length > 0 && (
+        <View style={[styles.section]}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Text style={[styles.sectionTitle, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>
+                Recently Viewed
+              </Text>
+              <View style={[styles.fireBadge, { backgroundColor: colors.secondary }]}>
+                <Ionicons name="time-outline" size={14} color={colors.mutedForeground} />
+              </View>
+            </View>
+            <TouchableOpacity onPress={() => router.push("/(tabs)/marketplace" as never)}>
+              <Text style={[styles.seeAll, { color: colors.primary, fontFamily: "Poppins_500Medium" }]}>
+                See All
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trendingRow}>
+            {recentVendors.map((vendor) => (
+              <TouchableOpacity
+                key={vendor.id}
+                testID={`recent-vendor-${vendor.id}`}
+                activeOpacity={0.88}
+                onPress={() => router.push(`/vendor/${vendor.id}` as never)}
+                style={[styles.trendingCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
+              >
+                <View style={[styles.trendingCover, { borderRadius: colors.radius, overflow: "hidden" }]}>
+                  {vendor.coverImage ? (
+                    <Image source={{ uri: vendor.coverImage }} style={styles.trendingCoverImg} />
+                  ) : (
+                    <View style={[styles.trendingCoverPlaceholder, { backgroundColor: colors.secondary }]}>
+                      <Ionicons name="storefront-outline" size={28} color={colors.primary} />
+                    </View>
+                  )}
+                  {vendor.subscriptionTier !== "basic" && (
+                    <View style={[styles.topBadge, { backgroundColor: vendor.subscriptionTier === "premium" ? "#7C3AED" : "#1E3A5F" }]}>
+                      <Ionicons name="trophy" size={9} color="#fff" />
+                      <Text style={[styles.topBadgeText, { color: "#fff", fontFamily: "Poppins_600SemiBold" }]}>
+                        {vendor.subscriptionTier === "premium" ? "Premium" : "Pro"}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={[styles.availDot, { backgroundColor: vendor.isAvailable ? "#10B981" : "#6B7689" }]} />
+                </View>
+                <View style={styles.trendingInfo}>
+                  <Text style={[styles.trendingName, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]} numberOfLines={1}>
+                    {vendor.businessName ?? "Vendor"}
+                  </Text>
+                  {vendor.businessType && (
+                    <Text style={[styles.trendingType, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]} numberOfLines={1}>
+                      {vendor.businessType}
+                    </Text>
+                  )}
+                  <View style={styles.trendingMeta}>
+                    <Ionicons name="star" size={11} color={colors.accent} />
+                    <Text style={[styles.trendingRating, { color: colors.foreground, fontFamily: "Poppins_500Medium" }]}>
+                      {vendor.rating ? vendor.rating.toFixed(1) : "New"}
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       {/* Event Categories */}
       <View style={styles.section}>

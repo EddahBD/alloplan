@@ -18,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useColors } from "@/hooks/useColors";
 import { apiRequest } from "@/hooks/useApi";
+import { saveRecentlyViewed } from "@/hooks/useRecentlyViewed";
 
 interface PortfolioItem {
   id: number;
@@ -111,6 +112,17 @@ export default function VendorProfileScreen() {
     try {
       const data = await apiRequest<VendorProfile>(`/vendors/${id}`);
       setVendor(data);
+      // Persist to recently viewed (best-effort, non-blocking)
+      saveRecentlyViewed({
+        id: data.id,
+        businessName: data.businessName ?? null,
+        businessType: data.businessType ?? null,
+        location: data.location ?? null,
+        rating: data.rating ?? null,
+        coverImage: data.coverImage ?? null,
+        subscriptionTier: data.subscriptionTier ?? "basic",
+        isAvailable: data.isAvailable ?? true,
+      });
     } catch {
       // handle error
     } finally {

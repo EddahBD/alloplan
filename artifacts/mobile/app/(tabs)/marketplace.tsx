@@ -88,6 +88,16 @@ function VendorCardItem({ vendor, colors }: { vendor: VendorCard; colors: Return
               <Text style={[styles.badgeText, { color: "#fff", fontFamily: "Poppins_600SemiBold" }]}>Featured</Text>
             </View>
           )}
+          {vendor.subscriptionTier !== "basic" && (
+            <View style={[styles.badge, {
+              backgroundColor: vendor.subscriptionTier === "premium" ? "#7C3AED" : "#1E3A5F",
+            }]}>
+              <Ionicons name="trophy" size={10} color="#fff" />
+              <Text style={[styles.badgeText, { color: "#fff", fontFamily: "Poppins_600SemiBold" }]}>
+                {vendor.subscriptionTier === "premium" ? "Premium" : "Pro"}
+              </Text>
+            </View>
+          )}
         </View>
         {/* Availability */}
         <View style={[styles.availabilityDot, { backgroundColor: vendor.isAvailable ? "#10B981" : "#6B7689" }]} />
