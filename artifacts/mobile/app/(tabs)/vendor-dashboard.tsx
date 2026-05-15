@@ -120,7 +120,13 @@ async function uploadImage(localUri: string, mimeType: string): Promise<string> 
   });
   if (!putResponse.ok) throw new Error(`Storage upload failed (${putResponse.status})`);
 
-  // 3. Convert objectPath → absolute API URL usable in React Native <Image>
+  // 3. Set ACL to public so React Native <Image> can render without bearer token
+  await apiRequest("/storage/objects/set-acl", {
+    method: "POST",
+    body: JSON.stringify({ objectPath, visibility: "public" }),
+  });
+
+  // 4. Convert objectPath → absolute API URL usable in React Native <Image>
   return resolveObjectUrl(objectPath);
 }
 

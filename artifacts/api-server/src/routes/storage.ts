@@ -1,11 +1,12 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { Readable } from "stream";
+import jwt from "jsonwebtoken";
 import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
 } from "@workspace/api-zod";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
-import { ObjectPermission } from "../lib/objectAcl";
+import { ObjectPermission, setObjectAclPolicy } from "../lib/objectAcl";
 import { requireAccessToken } from "../middlewares/auth";
 
 const router: IRouter = Router();
@@ -14,11 +15,9 @@ const objectStorageService = new ObjectStorageService();
 /**
  * POST /storage/uploads/request-url
  *
- * Request a presigned PUT URL for direct file upload.
- * Requires authentication. ACL metadata is NOT set here because the object
- * does not yet exist — it is set by the caller after upload if needed.
- * The objectPath is UUID-based and not guessable, so possession implies
- * legitimacy for any authenticated user.
+ * Request a presigned PUT URL for direct file upload. Requires authentication.
+ * ACL is NOT set here — the object doesn't exist yet. Callers must call
+ * POST /storage/objects/set-acl after uploading to make the object accessible.
  */
 router.post(
   "/storage/uploads/request-url",
@@ -51,10 +50,48 @@ router.post(
 );
 
 /**
+ * POST /storage/objects/set-acl
+ *
+ * Set ACL policy metadata on an uploaded object. Must be called after uploading
+ * to make an object accessible via GET /storage/objects/*.
+ * Requires authentication — the caller becomes the ACL owner.
+ */
+router.post(
+  "/storage/objects/set-acl",
+  requireAccessToken,
+  async (req: Request, res: Response) => {
+    const { objectPath, visibility } = req.body as {
+      objectPath?: string;
+      visibility?: string;
+    };
+
+    if (!objectPath || !["public", "private"].includes(visibility ?? "")) {
+      res.status(400).json({ error: "objectPath and visibility (public|private) are required" });
+      return;
+    }
+
+    try {
+      const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
+      await setObjectAclPolicy(objectFile, {
+        owner: String(req.user!.userId),
+        visibility: visibility as "public" | "private",
+      });
+      res.json({ ok: true, objectPath, visibility });
+    } catch (error) {
+      if (error instanceof ObjectNotFoundError) {
+        res.status(404).json({ error: "Object not found" });
+        return;
+      }
+      req.log.error({ err: error }, "Error setting ACL policy");
+      res.status(500).json({ error: "Failed to set ACL policy" });
+    }
+  },
+);
+
+/**
  * GET /storage/public-objects/*
  *
- * Serve public assets from PUBLIC_OBJECT_SEARCH_PATHS.
- * Unconditionally public — no authentication required.
+ * Serve public assets from PUBLIC_OBJECT_SEARCH_PATHS. No authentication needed.
  */
 router.get("/storage/public-objects/*filePath", async (req: Request, res: Response) => {
   try {
@@ -88,13 +125,12 @@ router.get("/storage/public-objects/*filePath", async (req: Request, res: Respon
  *
  * Serve object entities from PRIVATE_OBJECT_DIR.
  *
- * Auth is OPTIONAL here. Objects without an explicit ACL policy are publicly
- * accessible by UUID path (security through obscurity — the path is not
- * guessable). This is required so React Native <Image> components can render
- * portfolio/cover images without injecting bearer tokens into every request.
- *
- * Objects with an explicit ACL policy of visibility:"private" require the
- * caller to be authenticated as the owner. All other cases are allowed.
+ * Auth is OPTIONAL:
+ * - Objects with ACL visibility:"public" are served without authentication,
+ *   allowing React Native <Image> to render portfolio/cover images directly.
+ * - Objects with ACL visibility:"private" require a valid bearer token and
+ *   ownership match.
+ * - Objects with no ACL policy are DENIED (secure default).
  */
 router.get(
   "/storage/objects/*path",
@@ -105,15 +141,14 @@ router.get(
       const objectPath = `/objects/${wildcardPath}`;
       const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
 
-      // Extract userId from token if present (not required)
+      // Extract userId from bearer token if present (not required for public objects)
       let userId: string | undefined;
       const authHeader = req.headers.authorization;
       if (authHeader?.startsWith("Bearer ")) {
         try {
-          const jwt = await import("jsonwebtoken");
           const token = authHeader.slice(7);
           const secret = process.env.SESSION_SECRET ?? "secret";
-          const decoded = jwt.default.verify(token, secret) as { userId?: string | number };
+          const decoded = jwt.verify(token, secret) as { userId?: string | number };
           userId = decoded.userId !== undefined ? String(decoded.userId) : undefined;
         } catch {
           // Invalid token — treat as unauthenticated; ACL check will handle access

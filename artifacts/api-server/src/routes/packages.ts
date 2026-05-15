@@ -62,6 +62,11 @@ router.get("/:id", async (req, res) => {
       .where(eq(servicesTable.id, pkg.serviceId))
       .limit(1);
 
+    if (!service) {
+      res.status(404).json({ error: "NotFound", message: "Parent service not found" });
+      return;
+    }
+
     const [vendorRow] = await db
       .select({
         profile: vendorProfilesTable,
@@ -70,25 +75,23 @@ router.get("/:id", async (req, res) => {
       })
       .from(vendorProfilesTable)
       .innerJoin(usersTable, eq(vendorProfilesTable.userId, usersTable.id))
-      .where(eq(vendorProfilesTable.id, service!.vendorId))
+      .where(eq(vendorProfilesTable.id, service.vendorId))
       .limit(1);
 
     res.json({
       ...formatPackage(pkg),
-      service: service
-        ? {
-            id: service.id,
-            vendorId: service.vendorId,
-            name: service.name,
-            description: service.description,
-            category: service.category,
-            basePrice: parseFloat(service.basePrice),
-            isActive: service.isActive ?? true,
-            images: parseJsonArray(service.images),
-            packagesCount: 0,
-            createdAt: service.createdAt.toISOString(),
-          }
-        : null,
+      service: {
+        id: service.id,
+        vendorId: service.vendorId,
+        name: service.name,
+        description: service.description,
+        category: service.category,
+        basePrice: parseFloat(service.basePrice),
+        isActive: service.isActive ?? true,
+        images: parseJsonArray(service.images),
+        packagesCount: 0,
+        createdAt: service.createdAt.toISOString(),
+      },
       vendor: vendorRow
         ? {
             id: vendorRow.profile.id,
@@ -110,7 +113,7 @@ router.get("/:id", async (req, res) => {
             isTopRated:
               (vendorRow.profile.rating ? parseFloat(vendorRow.profile.rating) : 0) >= 4.5 &&
               (vendorRow.profile.reviewCount ?? 0) >= 5,
-            minPrice: parseFloat(service!.basePrice),
+            minPrice: parseFloat(service.basePrice),
           }
         : null,
     });
@@ -143,10 +146,15 @@ router.patch("/:id", requireAccessToken, async (req, res) => {
       .where(eq(servicesTable.id, pkg.serviceId))
       .limit(1);
 
+    if (!service) {
+      res.status(404).json({ error: "NotFound", message: "Parent service not found" });
+      return;
+    }
+
     const [vendor] = await db
       .select({ userId: vendorProfilesTable.userId })
       .from(vendorProfilesTable)
-      .where(eq(vendorProfilesTable.id, service!.vendorId))
+      .where(eq(vendorProfilesTable.id, service.vendorId))
       .limit(1);
 
     if (!vendor || vendor.userId !== req.user!.userId) {
@@ -199,10 +207,15 @@ router.delete("/:id", requireAccessToken, async (req, res) => {
       .where(eq(servicesTable.id, pkg.serviceId))
       .limit(1);
 
+    if (!service) {
+      res.status(404).json({ error: "NotFound", message: "Parent service not found" });
+      return;
+    }
+
     const [vendor] = await db
       .select({ userId: vendorProfilesTable.userId })
       .from(vendorProfilesTable)
-      .where(eq(vendorProfilesTable.id, service!.vendorId))
+      .where(eq(vendorProfilesTable.id, service.vendorId))
       .limit(1);
 
     if (!vendor || vendor.userId !== req.user!.userId) {
