@@ -19,6 +19,24 @@ import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest } from "@/hooks/useApi";
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface Service {
+  id: number;
+  name: string;
+  category: string;
+  basePrice: number;
+  packagesCount: number;
+  isActive: boolean;
+  description?: string | null;
+}
+
+interface PortfolioItem {
+  id: number;
+  imageUrl: string;
+  caption?: string | null;
+}
+
 interface VendorProfile {
   id: number;
   userId: number;
@@ -34,27 +52,29 @@ interface VendorProfile {
   responseTime?: string | null;
   isAvailable: boolean;
   ownerName: string;
-  services: Array<{
-    id: number;
-    name: string;
-    category: string;
-    basePrice: number;
-    packagesCount: number;
-    isActive: boolean;
-  }>;
-  portfolio: Array<{
-    id: number;
-    imageUrl: string;
-    caption?: string | null;
-  }>;
+  services: Service[];
+  portfolio: PortfolioItem[];
 }
+
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 const BUSINESS_TYPES = [
   "Photography", "Decoration", "Catering", "DJ / Music", "Venue", "Transport",
   "Makeup Artist", "MC / Emcee", "Florist", "Event Planning", "Other",
 ];
 
-function StatCard({ label, value, icon, color }: { label: string; value: string; icon: keyof typeof Ionicons.glyphMap; color: string }) {
+const SERVICE_CATEGORIES = [
+  "Photography", "Decoration", "Catering", "Music & DJ", "Venue Hire",
+  "Transport", "Makeup & Beauty", "MC & Hosting", "Flowers", "Planning", "Other",
+];
+
+// ─── Sub-components ──────────────────────────────────────────────────────────
+
+function StatCard({
+  label, value, icon, color,
+}: {
+  label: string; value: string; icon: keyof typeof Ionicons.glyphMap; color: string;
+}) {
   const colors = useColors();
   return (
     <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
@@ -67,6 +87,8 @@ function StatCard({ label, value, icon, color }: { label: string; value: string;
   );
 }
 
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export default function VendorDashboardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -75,14 +97,32 @@ export default function VendorDashboardScreen() {
   const [profile, setProfile] = useState<VendorProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAvailable, setIsAvailable] = useState(true);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [saving, setSaving] = useState(false);
 
+  // Profile edit modal
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [editBusinessName, setEditBusinessName] = useState("");
   const [editBio, setEditBio] = useState("");
   const [editBusinessType, setEditBusinessType] = useState("");
   const [editLocation, setEditLocation] = useState("");
   const [editResponseTime, setEditResponseTime] = useState("");
+
+  // Service add/edit modal
+  const [showServiceModal, setShowServiceModal] = useState(false);
+  const [editingService, setEditingService] = useState<Service | null>(null);
+  const [savingService, setSavingService] = useState(false);
+  const [svcName, setSvcName] = useState("");
+  const [svcCategory, setSvcCategory] = useState("");
+  const [svcPrice, setSvcPrice] = useState("");
+  const [svcDescription, setSvcDescription] = useState("");
+
+  // Portfolio add modal
+  const [showPortfolioModal, setShowPortfolioModal] = useState(false);
+  const [savingPortfolio, setSavingPortfolio] = useState(false);
+  const [portImageUrl, setPortImageUrl] = useState("");
+  const [portCaption, setPortCaption] = useState("");
+
+  // ── Load profile ─────────────────────────────────────────────────────────
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
@@ -90,11 +130,6 @@ export default function VendorDashboardScreen() {
       const data = await apiRequest<VendorProfile>("/vendors/my-profile");
       setProfile(data);
       setIsAvailable(data.isAvailable);
-      setEditBusinessName(data.businessName ?? "");
-      setEditBio(data.bio ?? "");
-      setEditBusinessType(data.businessType ?? "");
-      setEditLocation(data.location ?? "");
-      setEditResponseTime(data.responseTime ?? "");
     } catch {
       setProfile(null);
     } finally {
@@ -103,6 +138,8 @@ export default function VendorDashboardScreen() {
   }, []);
 
   useEffect(() => { loadProfile(); }, [loadProfile]);
+
+  // ── Availability toggle ──────────────────────────────────────────────────
 
   const toggleAvailability = async (val: boolean) => {
     if (!profile) return;
@@ -117,8 +154,19 @@ export default function VendorDashboardScreen() {
     }
   };
 
+  // ── Profile edit ─────────────────────────────────────────────────────────
+
+  const openProfileEdit = () => {
+    setEditBusinessName(profile?.businessName ?? "");
+    setEditBio(profile?.bio ?? "");
+    setEditBusinessType(profile?.businessType ?? "");
+    setEditLocation(profile?.location ?? "");
+    setEditResponseTime(profile?.responseTime ?? "");
+    setShowProfileModal(true);
+  };
+
   const saveProfile = async () => {
-    setSaving(true);
+    setSavingProfile(true);
     try {
       const data = await apiRequest<VendorProfile>("/vendors/my-profile", {
         method: "PUT",
@@ -131,24 +179,165 @@ export default function VendorDashboardScreen() {
         }),
       });
       setProfile(data);
-      setShowEditModal(false);
+      setShowProfileModal(false);
     } catch (e: unknown) {
       Alert.alert("Error", e instanceof Error ? e.message : "Failed to save profile");
     } finally {
-      setSaving(false);
+      setSavingProfile(false);
     }
   };
 
-  const openEdit = () => {
-    if (profile) {
-      setEditBusinessName(profile.businessName ?? "");
-      setEditBio(profile.bio ?? "");
-      setEditBusinessType(profile.businessType ?? "");
-      setEditLocation(profile.location ?? "");
-      setEditResponseTime(profile.responseTime ?? "");
-    }
-    setShowEditModal(true);
+  // ── Service CRUD ─────────────────────────────────────────────────────────
+
+  const openAddService = () => {
+    setEditingService(null);
+    setSvcName("");
+    setSvcCategory("");
+    setSvcPrice("");
+    setSvcDescription("");
+    setShowServiceModal(true);
   };
+
+  const openEditService = (service: Service) => {
+    setEditingService(service);
+    setSvcName(service.name);
+    setSvcCategory(service.category);
+    setSvcPrice(String(service.basePrice));
+    setSvcDescription(service.description ?? "");
+    setShowServiceModal(true);
+  };
+
+  const saveService = async () => {
+    if (!profile) return;
+    if (!svcName.trim() || !svcCategory || !svcPrice) {
+      Alert.alert("Validation", "Name, category, and price are required.");
+      return;
+    }
+    setSavingService(true);
+    try {
+      const body = {
+        name: svcName.trim(),
+        category: svcCategory,
+        basePrice: parseFloat(svcPrice),
+        description: svcDescription.trim() || null,
+      };
+      if (editingService) {
+        // PATCH existing service
+        const updated = await apiRequest<Service>(`/services/${editingService.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        });
+        setProfile((prev) =>
+          prev
+            ? {
+                ...prev,
+                services: prev.services.map((s) =>
+                  s.id === updated.id ? updated : s,
+                ),
+              }
+            : prev,
+        );
+      } else {
+        // POST new service
+        const created = await apiRequest<Service>(`/vendors/${profile.id}/services`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        setProfile((prev) =>
+          prev ? { ...prev, services: [created, ...prev.services] } : prev,
+        );
+      }
+      setShowServiceModal(false);
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Failed to save service");
+    } finally {
+      setSavingService(false);
+    }
+  };
+
+  const deleteService = async (service: Service) => {
+    Alert.alert(
+      "Remove Service",
+      `Remove "${service.name}"? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await apiRequest(`/services/${service.id}`, { method: "DELETE" });
+              setProfile((prev) =>
+                prev
+                  ? { ...prev, services: prev.services.filter((s) => s.id !== service.id) }
+                  : prev,
+              );
+            } catch {
+              Alert.alert("Error", "Failed to remove service");
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // ── Portfolio CRUD ───────────────────────────────────────────────────────
+
+  const openAddPortfolio = () => {
+    setPortImageUrl("");
+    setPortCaption("");
+    setShowPortfolioModal(true);
+  };
+
+  const savePortfolio = async () => {
+    if (!profile) return;
+    if (!portImageUrl.trim()) {
+      Alert.alert("Validation", "Please enter an image URL.");
+      return;
+    }
+    setSavingPortfolio(true);
+    try {
+      const item = await apiRequest<PortfolioItem>(`/vendors/${profile.id}/portfolio`, {
+        method: "POST",
+        body: JSON.stringify({
+          imageUrl: portImageUrl.trim(),
+          caption: portCaption.trim() || null,
+        }),
+      });
+      setProfile((prev) =>
+        prev ? { ...prev, portfolio: [item, ...prev.portfolio] } : prev,
+      );
+      setShowPortfolioModal(false);
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Failed to add photo");
+    } finally {
+      setSavingPortfolio(false);
+    }
+  };
+
+  const deletePortfolioItem = (item: PortfolioItem) => {
+    Alert.alert("Remove Photo", "Remove this photo from your portfolio?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await apiRequest(`/portfolio/${item.id}`, { method: "DELETE" });
+            setProfile((prev) =>
+              prev
+                ? { ...prev, portfolio: prev.portfolio.filter((p) => p.id !== item.id) }
+                : prev,
+            );
+          } catch {
+            Alert.alert("Error", "Failed to remove photo");
+          }
+        },
+      },
+    ]);
+  };
+
+  // ── Render ───────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -166,7 +355,7 @@ export default function VendorDashboardScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: Platform.OS === "web" ? 34 + 84 : insets.bottom + 100 }}
       >
-        {/* Header */}
+        {/* ─ Header ─ */}
         <View style={[styles.header, { backgroundColor: colors.navy, paddingTop: Platform.OS === "web" ? 67 + 16 : insets.top + 16 }]}>
           <View style={styles.headerTop}>
             <View>
@@ -180,7 +369,7 @@ export default function VendorDashboardScreen() {
             <TouchableOpacity
               testID="edit-profile-btn"
               style={[styles.editBtn, { backgroundColor: "rgba(255,255,255,0.12)" }]}
-              onPress={openEdit}
+              onPress={openProfileEdit}
             >
               <Ionicons name="create-outline" size={20} color="#fff" />
             </TouchableOpacity>
@@ -194,7 +383,7 @@ export default function VendorDashboardScreen() {
                   {isAvailable ? "Taking Bookings" : "Not Available"}
                 </Text>
                 <Text style={[styles.availSubtitle, { color: "rgba(255,255,255,0.6)", fontFamily: "Poppins_400Regular" }]}>
-                  Toggle to control bookings
+                  Toggle to control new bookings
                 </Text>
               </View>
             </View>
@@ -208,7 +397,7 @@ export default function VendorDashboardScreen() {
           </View>
         </View>
 
-        {/* Stats */}
+        {/* ─ Stats ─ */}
         <View style={[styles.statsGrid, { paddingHorizontal: 16, paddingTop: 16 }]}>
           <StatCard label="Rating" value={profile?.rating ? profile.rating.toFixed(1) : "—"} icon="star" color={colors.accent} />
           <StatCard label="Reviews" value={String(profile?.reviewCount ?? 0)} icon="chatbubbles-outline" color="#8B5CF6" />
@@ -216,7 +405,7 @@ export default function VendorDashboardScreen() {
           <StatCard label="Portfolio" value={String(profile?.portfolio?.length ?? 0)} icon="images-outline" color="#10B981" />
         </View>
 
-        {/* Profile setup prompt */}
+        {/* ─ No profile prompt ─ */}
         {!profile && (
           <View style={[styles.setupCard, { backgroundColor: colors.card, borderColor: colors.primary + "40", borderRadius: colors.radius, margin: 16 }]}>
             <Ionicons name="person-circle-outline" size={44} color={colors.primary} />
@@ -229,7 +418,7 @@ export default function VendorDashboardScreen() {
             <TouchableOpacity
               testID="setup-profile-btn"
               style={[styles.setupBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
-              onPress={openEdit}
+              onPress={openProfileEdit}
             >
               <Ionicons name="add-circle-outline" size={16} color="#fff" />
               <Text style={[styles.setupBtnText, { color: "#fff", fontFamily: "Poppins_600SemiBold" }]}>
@@ -239,12 +428,12 @@ export default function VendorDashboardScreen() {
           </View>
         )}
 
-        {/* Profile summary */}
+        {/* ─ Profile summary ─ */}
         {profile && (
           <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, margin: 16 }]}>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>Profile</Text>
-              <TouchableOpacity onPress={openEdit}>
+              <TouchableOpacity onPress={openProfileEdit}>
                 <Text style={[styles.editLink, { color: colors.primary, fontFamily: "Poppins_500Medium" }]}>Edit</Text>
               </TouchableOpacity>
             </View>
@@ -282,11 +471,11 @@ export default function VendorDashboardScreen() {
           </View>
         )}
 
-        {/* Services */}
+        {/* ─ Services ─ */}
         <View style={styles.sectionOuter}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>My Services</Text>
-            <TouchableOpacity testID="add-service-btn">
+            <TouchableOpacity testID="add-service-btn" onPress={openAddService}>
               <View style={[styles.addBtn, { backgroundColor: colors.secondary, borderRadius: 8 }]}>
                 <Ionicons name="add" size={16} color={colors.primary} />
                 <Text style={[styles.addBtnText, { color: colors.primary, fontFamily: "Poppins_500Medium" }]}>Add</Text>
@@ -299,6 +488,12 @@ export default function VendorDashboardScreen() {
               <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]}>
                 No services yet. Add your first service!
               </Text>
+              <TouchableOpacity
+                style={[styles.emptyActionBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
+                onPress={openAddService}
+              >
+                <Text style={[styles.emptyActionText, { color: "#fff", fontFamily: "Poppins_600SemiBold" }]}>Add Service</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             profile.services.map((service) => (
@@ -309,24 +504,33 @@ export default function VendorDashboardScreen() {
                 <View style={styles.serviceInfo}>
                   <Text style={[styles.serviceName, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>{service.name}</Text>
                   <Text style={[styles.serviceMeta, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]}>
-                    {service.category} · TZS {service.basePrice.toLocaleString()} · {service.packagesCount} pkg
+                    {service.category} · TZS {service.basePrice.toLocaleString()}
                   </Text>
                 </View>
-                <View style={[styles.activeTag, { backgroundColor: service.isActive ? "#10B98120" : colors.muted }]}>
-                  <Text style={[styles.activeTagText, { color: service.isActive ? "#10B981" : colors.mutedForeground, fontFamily: "Poppins_500Medium" }]}>
-                    {service.isActive ? "Active" : "Off"}
-                  </Text>
-                </View>
+                <TouchableOpacity
+                  testID={`edit-service-${service.id}`}
+                  onPress={() => openEditService(service)}
+                  style={styles.serviceAction}
+                >
+                  <Ionicons name="create-outline" size={18} color={colors.primary} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  testID={`delete-service-${service.id}`}
+                  onPress={() => deleteService(service)}
+                  style={styles.serviceAction}
+                >
+                  <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                </TouchableOpacity>
               </View>
             ))
           )}
         </View>
 
-        {/* Portfolio */}
+        {/* ─ Portfolio ─ */}
         <View style={styles.sectionOuter}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.foreground, fontFamily: "Poppins_600SemiBold" }]}>Portfolio</Text>
-            <TouchableOpacity testID="add-portfolio-btn">
+            <TouchableOpacity testID="add-portfolio-btn" onPress={openAddPortfolio}>
               <View style={[styles.addBtn, { backgroundColor: colors.secondary, borderRadius: 8 }]}>
                 <Ionicons name="camera-outline" size={16} color={colors.primary} />
                 <Text style={[styles.addBtnText, { color: colors.primary, fontFamily: "Poppins_500Medium" }]}>Add Photo</Text>
@@ -339,19 +543,41 @@ export default function VendorDashboardScreen() {
               <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]}>
                 Add photos to showcase your work
               </Text>
+              <TouchableOpacity
+                style={[styles.emptyActionBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
+                onPress={openAddPortfolio}
+              >
+                <Text style={[styles.emptyActionText, { color: "#fff", fontFamily: "Poppins_600SemiBold" }]}>Add Photo</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.portfolioRow}>
-              {profile.portfolio.slice(0, 8).map((item) => (
-                <View key={item.id} style={[styles.portfolioThumb, { borderRadius: colors.radius, overflow: "hidden", borderColor: colors.border }]}>
+              {/* Add tile */}
+              <TouchableOpacity
+                testID="add-portfolio-tile"
+                onPress={openAddPortfolio}
+                style={[styles.portfolioAddTile, { borderColor: colors.primary, borderRadius: colors.radius, backgroundColor: colors.secondary }]}
+              >
+                <Ionicons name="add" size={22} color={colors.primary} />
+              </TouchableOpacity>
+              {profile.portfolio.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  onLongPress={() => deletePortfolioItem(item)}
+                  testID={`portfolio-item-${item.id}`}
+                  style={[styles.portfolioThumb, { borderRadius: colors.radius, overflow: "hidden", borderColor: colors.border }]}
+                >
                   <Image source={{ uri: item.imageUrl }} style={styles.portfolioThumbImg} />
-                </View>
+                  <View style={[styles.portDeleteHint, { backgroundColor: "rgba(0,0,0,0.35)" }]}>
+                    <Ionicons name="trash-outline" size={12} color="#fff" />
+                  </View>
+                </TouchableOpacity>
               ))}
             </ScrollView>
           )}
         </View>
 
-        {/* Quick actions */}
+        {/* ─ Quick actions ─ */}
         <View style={styles.sectionOuter}>
           <Text style={[styles.sectionTitle, { color: colors.foreground, fontFamily: "Poppins_600SemiBold", marginBottom: 12 }]}>Quick Actions</Text>
           {[
@@ -377,42 +603,32 @@ export default function VendorDashboardScreen() {
         </View>
       </ScrollView>
 
-      {/* Edit Profile Modal */}
-      <Modal visible={showEditModal} animationType="slide" transparent>
+      {/* ══════════════════════════════════════════
+          Profile Edit Modal
+      ══════════════════════════════════════════ */}
+      <Modal visible={showProfileModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: "Poppins_700Bold" }]}>
                 {profile ? "Edit Profile" : "Create Profile"}
               </Text>
-              <TouchableOpacity onPress={() => setShowEditModal(false)}>
+              <TouchableOpacity onPress={() => setShowProfileModal(false)}>
                 <Ionicons name="close" size={24} color={colors.foreground} />
               </TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-              <View style={styles.formGroup}>
-                <Text style={[styles.formLabel, { color: colors.foreground, fontFamily: "Poppins_500Medium" }]}>Business Name</Text>
-                <TextInput
-                  testID="business-name-input"
-                  style={[styles.input, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.muted, fontFamily: "Poppins_400Regular" }]}
-                  placeholder="e.g. Amani Photography Studio"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={editBusinessName}
-                  onChangeText={setEditBusinessName}
-                />
-              </View>
+              <FormField label="Business Name" value={editBusinessName} onChange={setEditBusinessName}
+                placeholder="e.g. Amani Photography Studio" colors={colors} testID="business-name-input" />
               <View style={styles.formGroup}>
                 <Text style={[styles.formLabel, { color: colors.foreground, fontFamily: "Poppins_500Medium" }]}>Business Type</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.typeChips}>
                   {BUSINESS_TYPES.map((type) => (
-                    <TouchableOpacity
-                      key={type}
-                      onPress={() => setEditBusinessType(type)}
+                    <TouchableOpacity key={type} onPress={() => setEditBusinessType(type)}
                       style={[styles.typeChip, {
                         backgroundColor: editBusinessType === type ? colors.primary : colors.card,
                         borderColor: editBusinessType === type ? colors.primary : colors.border,
-                      }]}
-                    >
+                      }]}>
                       <Text style={[styles.typeChipText, {
                         color: editBusinessType === type ? "#fff" : colors.foreground,
                         fontFamily: "Poppins_400Regular",
@@ -421,62 +637,165 @@ export default function VendorDashboardScreen() {
                   ))}
                 </ScrollView>
               </View>
-              <View style={styles.formGroup}>
-                <Text style={[styles.formLabel, { color: colors.foreground, fontFamily: "Poppins_500Medium" }]}>Location / City</Text>
-                <TextInput
-                  testID="location-input"
-                  style={[styles.input, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.muted, fontFamily: "Poppins_400Regular" }]}
-                  placeholder="e.g. Dar es Salaam, Tanzania"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={editLocation}
-                  onChangeText={setEditLocation}
-                />
-              </View>
-              <View style={styles.formGroup}>
-                <Text style={[styles.formLabel, { color: colors.foreground, fontFamily: "Poppins_500Medium" }]}>Bio / Description</Text>
-                <TextInput
-                  testID="bio-input"
-                  style={[styles.input, styles.textArea, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.muted, fontFamily: "Poppins_400Regular" }]}
-                  placeholder="Tell customers about your services, experience..."
-                  placeholderTextColor={colors.mutedForeground}
-                  value={editBio}
-                  onChangeText={setEditBio}
-                  multiline
-                  numberOfLines={4}
-                  textAlignVertical="top"
-                />
-              </View>
-              <View style={styles.formGroup}>
-                <Text style={[styles.formLabel, { color: colors.foreground, fontFamily: "Poppins_500Medium" }]}>Response Time</Text>
-                <TextInput
-                  style={[styles.input, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.muted, fontFamily: "Poppins_400Regular" }]}
-                  placeholder="e.g. 1 hour, 24 hours"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={editResponseTime}
-                  onChangeText={setEditResponseTime}
-                />
-              </View>
+              <FormField label="Location / City" value={editLocation} onChange={setEditLocation}
+                placeholder="e.g. Dar es Salaam, Tanzania" colors={colors} testID="location-input" />
+              <FormField label="Bio / Description" value={editBio} onChange={setEditBio}
+                placeholder="Tell customers about your services..." colors={colors} testID="bio-input" multiline />
+              <FormField label="Response Time" value={editResponseTime} onChange={setEditResponseTime}
+                placeholder="e.g. 1 hour, 24 hours" colors={colors} />
             </ScrollView>
-            <TouchableOpacity
-              testID="save-profile-btn"
-              style={[styles.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }, saving && { opacity: 0.7 }]}
-              onPress={saveProfile}
-              disabled={saving}
-            >
-              {saving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={[styles.saveBtnText, { color: "#fff", fontFamily: "Poppins_700Bold" }]}>
-                  {profile ? "Save Changes" : "Create Profile"}
-                </Text>
+            <ModalSaveButton onPress={saveProfile} loading={savingProfile} label={profile ? "Save Changes" : "Create Profile"} colors={colors} testID="save-profile-btn" />
+          </View>
+        </View>
+      </Modal>
+
+      {/* ══════════════════════════════════════════
+          Service Add / Edit Modal
+      ══════════════════════════════════════════ */}
+      <Modal visible={showServiceModal} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: "Poppins_700Bold" }]}>
+                {editingService ? "Edit Service" : "Add Service"}
+              </Text>
+              <TouchableOpacity onPress={() => setShowServiceModal(false)}>
+                <Ionicons name="close" size={24} color={colors.foreground} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+              <FormField label="Service Name *" value={svcName} onChange={setSvcName}
+                placeholder="e.g. Wedding Photography" colors={colors} testID="service-name-input" />
+              <View style={styles.formGroup}>
+                <Text style={[styles.formLabel, { color: colors.foreground, fontFamily: "Poppins_500Medium" }]}>Category *</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.typeChips}>
+                  {SERVICE_CATEGORIES.map((cat) => (
+                    <TouchableOpacity key={cat} onPress={() => setSvcCategory(cat)}
+                      style={[styles.typeChip, {
+                        backgroundColor: svcCategory === cat ? colors.primary : colors.card,
+                        borderColor: svcCategory === cat ? colors.primary : colors.border,
+                      }]}>
+                      <Text style={[styles.typeChipText, {
+                        color: svcCategory === cat ? "#fff" : colors.foreground,
+                        fontFamily: "Poppins_400Regular",
+                      }]}>{cat}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+              <FormField label="Base Price (TZS) *" value={svcPrice} onChange={setSvcPrice}
+                placeholder="e.g. 250000" colors={colors} testID="service-price-input" keyboardType="numeric" />
+              <FormField label="Description" value={svcDescription} onChange={setSvcDescription}
+                placeholder="Describe what's included..." colors={colors} testID="service-description-input" multiline />
+            </ScrollView>
+            <ModalSaveButton
+              onPress={saveService}
+              loading={savingService}
+              label={editingService ? "Save Service" : "Add Service"}
+              colors={colors}
+              testID="save-service-btn"
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* ══════════════════════════════════════════
+          Portfolio Add Modal
+      ══════════════════════════════════════════ */}
+      <Modal visible={showPortfolioModal} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: "Poppins_700Bold" }]}>
+                Add Portfolio Photo
+              </Text>
+              <TouchableOpacity onPress={() => setShowPortfolioModal(false)}>
+                <Ionicons name="close" size={24} color={colors.foreground} />
+              </TouchableOpacity>
+            </View>
+            <View style={{ flex: 1, gap: 4 }}>
+              <FormField label="Image URL *" value={portImageUrl} onChange={setPortImageUrl}
+                placeholder="https://example.com/photo.jpg" colors={colors} testID="portfolio-url-input" />
+              {portImageUrl.startsWith("http") && (
+                <Image source={{ uri: portImageUrl }} style={[styles.portPreview, { borderRadius: colors.radius }]} resizeMode="cover" />
               )}
-            </TouchableOpacity>
+              <FormField label="Caption (optional)" value={portCaption} onChange={setPortCaption}
+                placeholder="Describe this photo..." colors={colors} testID="portfolio-caption-input" />
+              <Text style={[styles.portHint, { color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }]}>
+                Paste the URL of a photo that showcases your work. Native photo upload is available in the full app.
+              </Text>
+            </View>
+            <ModalSaveButton onPress={savePortfolio} loading={savingPortfolio} label="Add to Portfolio" colors={colors} testID="save-portfolio-btn" />
           </View>
         </View>
       </Modal>
     </View>
   );
 }
+
+// ─── Shared form helpers ──────────────────────────────────────────────────────
+
+function FormField({
+  label, value, onChange, placeholder, colors, testID, multiline, keyboardType,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  colors: ReturnType<typeof useColors>;
+  testID?: string;
+  multiline?: boolean;
+  keyboardType?: "default" | "numeric" | "email-address";
+}) {
+  return (
+    <View style={styles.formGroup}>
+      <Text style={[styles.formLabel, { color: colors.foreground, fontFamily: "Poppins_500Medium" }]}>{label}</Text>
+      <TextInput
+        testID={testID}
+        style={[
+          styles.input,
+          multiline && styles.textArea,
+          { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.muted, fontFamily: "Poppins_400Regular" },
+        ]}
+        placeholder={placeholder}
+        placeholderTextColor={colors.mutedForeground}
+        value={value}
+        onChangeText={onChange}
+        multiline={multiline}
+        numberOfLines={multiline ? 4 : 1}
+        textAlignVertical={multiline ? "top" : "center"}
+        keyboardType={keyboardType ?? "default"}
+      />
+    </View>
+  );
+}
+
+function ModalSaveButton({
+  onPress, loading, label, colors, testID,
+}: {
+  onPress: () => void;
+  loading: boolean;
+  label: string;
+  colors: ReturnType<typeof useColors>;
+  testID?: string;
+}) {
+  return (
+    <TouchableOpacity
+      testID={testID}
+      style={[styles.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }, loading && { opacity: 0.7 }]}
+      onPress={onPress}
+      disabled={loading}
+    >
+      {loading ? (
+        <ActivityIndicator color="#fff" />
+      ) : (
+        <Text style={[styles.saveBtnText, { color: "#fff", fontFamily: "Poppins_700Bold" }]}>{label}</Text>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -515,16 +834,21 @@ const styles = StyleSheet.create({
   tierText: { fontSize: 12 },
   emptyCard: { padding: 24, alignItems: "center", gap: 10, borderWidth: 1 },
   emptyText: { fontSize: 13, textAlign: "center" },
-  serviceItem: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderWidth: 1 },
+  emptyActionBtn: { paddingHorizontal: 20, paddingVertical: 10, marginTop: 4 },
+  emptyActionText: { fontSize: 13 },
+  serviceItem: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14, borderWidth: 1 },
   serviceIconBox: { width: 42, height: 42, alignItems: "center", justifyContent: "center" },
   serviceInfo: { flex: 1, gap: 3 },
   serviceName: { fontSize: 14 },
   serviceMeta: { fontSize: 12 },
-  activeTag: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  activeTagText: { fontSize: 11 },
+  serviceAction: { padding: 6 },
   portfolioRow: { gap: 8 },
-  portfolioThumb: { width: 80, height: 80, borderWidth: 1 },
+  portfolioAddTile: { width: 80, height: 80, alignItems: "center", justifyContent: "center", borderWidth: 2, borderStyle: "dashed" },
+  portfolioThumb: { width: 80, height: 80, borderWidth: 1, position: "relative" },
   portfolioThumbImg: { width: "100%", height: "100%", resizeMode: "cover" },
+  portDeleteHint: { position: "absolute", bottom: 3, right: 3, borderRadius: 4, padding: 3 },
+  portPreview: { height: 140, width: "100%", marginTop: 4 },
+  portHint: { fontSize: 11, lineHeight: 16, marginTop: 6 },
   actionItem: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderWidth: 1 },
   actionIcon: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   actionText: { flex: 1 },
