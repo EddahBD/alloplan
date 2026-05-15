@@ -1,13 +1,12 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { Readable } from "stream";
-import jwt from "jsonwebtoken";
 import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
 } from "@workspace/api-zod";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import { ObjectPermission, setObjectAclPolicy } from "../lib/objectAcl";
-import { requireAccessToken } from "../middlewares/auth";
+import { requireAccessToken, verifyToken } from "../middlewares/auth";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -141,17 +140,18 @@ router.get(
       const objectPath = `/objects/${wildcardPath}`;
       const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
 
-      // Extract userId from bearer token if present (not required for public objects)
+      // Extract userId from bearer token if present (not required for public objects).
+      // Uses the shared verifyToken utility which honours SESSION_SECRET/JWT_SECRET
+      // consistently with the rest of the API — no fallback to literal strings.
       let userId: string | undefined;
       const authHeader = req.headers.authorization;
       if (authHeader?.startsWith("Bearer ")) {
         try {
-          const token = authHeader.slice(7);
-          const secret = process.env.SESSION_SECRET ?? "secret";
-          const decoded = jwt.verify(token, secret) as { userId?: string | number };
-          userId = decoded.userId !== undefined ? String(decoded.userId) : undefined;
+          const payload = verifyToken(authHeader.slice(7));
+          userId = String(payload.userId);
         } catch {
-          // Invalid token — treat as unauthenticated; ACL check will handle access
+          // Invalid/expired token — treat as unauthenticated.
+          // canAccessObjectEntity will deny private objects accordingly.
         }
       }
 
