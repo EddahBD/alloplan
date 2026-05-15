@@ -198,7 +198,16 @@ router.post("/refresh", async (req, res) => {
       return;
     }
 
-    const payload = verifyToken(refreshToken);
+    const payload = verifyToken(refreshToken) as {
+      userId: number;
+      email: string;
+      role: string;
+      tokenType?: string;
+    };
+    if (payload.tokenType !== "refresh") {
+      res.status(401).json({ error: "Unauthorized", message: "Not a refresh token" });
+      return;
+    }
     const newToken = signToken({ userId: payload.userId, email: payload.email, role: payload.role });
     const newRefreshToken = signRefreshToken({ userId: payload.userId, email: payload.email, role: payload.role });
 

@@ -8,8 +8,9 @@ import React from "react";
 import { Platform, StyleSheet, View, useColorScheme } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
+import { useAuth } from "@/context/AuthContext";
 
-function NativeTabLayout() {
+function NativeCustomerLayout() {
   return (
     <NativeTabs>
       <NativeTabs.Trigger name="index">
@@ -20,13 +21,40 @@ function NativeTabLayout() {
         <Icon sf={{ default: "storefront", selected: "storefront.fill" }} />
         <Label>Marketplace</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="planner">
+        <Icon sf={{ default: "calendar", selected: "calendar.fill" }} />
+        <Label>Planner</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="wallet">
         <Icon sf={{ default: "wallet.bifold", selected: "wallet.bifold.fill" }} />
         <Label>Wallet</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="profile">
+        <Icon sf={{ default: "person", selected: "person.fill" }} />
+        <Label>Profile</Label>
+      </NativeTabs.Trigger>
+    </NativeTabs>
+  );
+}
+
+function NativeVendorLayout() {
+  return (
+    <NativeTabs>
+      <NativeTabs.Trigger name="index">
+        <Icon sf={{ default: "house", selected: "house.fill" }} />
+        <Label>Home</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="vendor-dashboard">
+        <Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
+        <Label>Dashboard</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="bookings">
         <Icon sf={{ default: "bookmark", selected: "bookmark.fill" }} />
         <Label>Bookings</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="wallet">
+        <Icon sf={{ default: "wallet.bifold", selected: "wallet.bifold.fill" }} />
+        <Label>Wallet</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="profile">
         <Icon sf={{ default: "person", selected: "person.fill" }} />
@@ -42,6 +70,8 @@ function ClassicTabLayout() {
   const isDark = colorScheme === "dark";
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
+  const { user } = useAuth();
+  const isVendor = user?.role === "vendor";
 
   return (
     <Tabs
@@ -102,6 +132,7 @@ function ClassicTabLayout() {
         name="marketplace"
         options={{
           title: "Marketplace",
+          href: isVendor ? null : undefined,
           tabBarIcon: ({ color, focused }) =>
             isIOS ? (
               <SymbolView
@@ -112,6 +143,48 @@ function ClassicTabLayout() {
             ) : (
               <Ionicons
                 name={focused ? "storefront" : "storefront-outline"}
+                size={22}
+                color={color}
+              />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="vendor-dashboard"
+        options={{
+          title: "Dashboard",
+          href: isVendor ? undefined : null,
+          tabBarIcon: ({ color, focused }) =>
+            isIOS ? (
+              <SymbolView
+                name={focused ? "chart.bar.fill" : "chart.bar"}
+                tintColor={color}
+                size={24}
+              />
+            ) : (
+              <Ionicons
+                name={focused ? "bar-chart" : "bar-chart-outline"}
+                size={22}
+                color={color}
+              />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="planner"
+        options={{
+          title: "Planner",
+          href: isVendor ? null : undefined,
+          tabBarIcon: ({ color, focused }) =>
+            isIOS ? (
+              <SymbolView
+                name={focused ? "calendar.fill" : "calendar"}
+                tintColor={color}
+                size={24}
+              />
+            ) : (
+              <Ionicons
+                name={focused ? "calendar" : "calendar-outline"}
                 size={22}
                 color={color}
               />
@@ -183,8 +256,11 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
+  const { user } = useAuth();
+  const isVendor = user?.role === "vendor";
+
   if (isLiquidGlassAvailable()) {
-    return <NativeTabLayout />;
+    return isVendor ? <NativeVendorLayout /> : <NativeCustomerLayout />;
   }
   return <ClassicTabLayout />;
 }
