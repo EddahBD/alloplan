@@ -5,7 +5,7 @@ import {
   RequestUploadUrlResponse,
 } from "@workspace/api-zod";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
-import { ObjectPermission, setObjectAclPolicy } from "../lib/objectAcl";
+import { ObjectPermission, setObjectAclPolicy, getObjectAclPolicy } from "../lib/objectAcl";
 import { requireAccessToken, verifyToken } from "../middlewares/auth";
 
 const router: IRouter = Router();
@@ -71,8 +71,19 @@ router.post(
 
     try {
       const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
+      const callerId = String(req.user!.userId);
+
+      // Ownership enforcement: if an ACL policy already exists, only the
+      // existing owner may change it. This prevents an authenticated user
+      // from taking over or silencing another user's uploaded object.
+      const existingAcl = await getObjectAclPolicy(objectFile);
+      if (existingAcl && existingAcl.owner !== callerId) {
+        res.status(403).json({ error: "Forbidden", message: "ACL already set by another user" });
+        return;
+      }
+
       await setObjectAclPolicy(objectFile, {
-        owner: String(req.user!.userId),
+        owner: callerId,
         visibility: visibility as "public" | "private",
       });
       res.json({ ok: true, objectPath, visibility });
