@@ -270,6 +270,11 @@ export default function PackageDetailScreen() {
         </View>
         <TouchableOpacity
           testID="book-now-btn"
+          onPress={() =>
+            router.push(
+              `/book/${vendorId}?packageId=${packageId}` as never
+            )
+          }
           style={[styles.bookBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
         >
           <Ionicons name="calendar-outline" size={18} color="#fff" />

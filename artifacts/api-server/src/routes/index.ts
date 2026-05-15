@@ -6,6 +6,8 @@ import servicesRouter from "./services";
 import packagesRouter from "./packages";
 import portfolioRouter from "./portfolio";
 import storageRouter from "./storage";
+import bookingsRouter from "./bookings";
+import eventsRouter from "./events";
 
 const router: IRouter = Router();
 
@@ -16,5 +18,7 @@ router.use("/services", servicesRouter);
 router.use("/packages", packagesRouter);
 router.use("/portfolio", portfolioRouter);
 router.use(storageRouter);
+router.use("/bookings", bookingsRouter);
+router.use("/events", eventsRouter);
 
 export default router;
